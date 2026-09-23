@@ -41,8 +41,7 @@ tag, so updates only happen when you change it:
 pi install git:github.com/siiick/pignon@v0.1.0
 ```
 
-To upgrade, remove it and install the newer tag
-(`pi remove git:github.com/siiick/pignon`, then `pi install …@v0.2.0`).
+To upgrade, install the newer tag the same way; it replaces the old one.
 Releases are listed on the [releases page](https://github.com/siiick/pignon/releases).
 Without a tag, `pi update --extensions` follows the `main` branch.
 
