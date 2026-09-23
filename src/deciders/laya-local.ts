@@ -1,5 +1,5 @@
 /**
- * Long-lived stdio client for the local Laya decision worker.
+ * `laya-local` decider: long-lived stdio client for the local Laya worker.
  *
  * Spawns `worker/laya_worker.py`, speaks newline-delimited JSON over
  * stdin/stdout, and keeps the process (and its resident MLX model) warm across
@@ -16,14 +16,15 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 
 import {
-  type LayaAnswer,
-  type LayaDecisionRequest,
   type LayaDecisionResponse,
   type LayaHealthResponse,
-  type LayaRoutingDecision,
-  type Tier,
   DEFAULT_THRESHOLDS,
-  TIER_ORDER,
+} from "../types.js";
+import {
+  type Decider,
+  type DeciderResult,
+  type DecisionRequest,
+  DeciderError,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -44,10 +45,11 @@ export type SpawnFn = typeof spawn;
 export function resolveWorkerDir(env: NodeJS.ProcessEnv = process.env): string {
   if (env.LAYA_WORKER_DIR) return env.LAYA_WORKER_DIR;
 
-  const extensionRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-  const candidates = [join(extensionRoot, "worker")];
+  // This module lives in <root>/src/deciders/.
+  const rootOf = (modulePath: string) => resolve(dirname(modulePath), "..", "..");
+  const candidates = [join(rootOf(fileURLToPath(import.meta.url)), "worker")];
   try {
-    const realRoot = dirname(dirname(realpathSync(fileURLToPath(import.meta.url))));
+    const realRoot = rootOf(realpathSync(fileURLToPath(import.meta.url)));
     candidates.push(join(realRoot, "worker"));
   } catch {
     // realpath unavailable — keep the direct candidate only
@@ -126,9 +128,9 @@ export function workerEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.Proce
 // ---------------------------------------------------------------------------
 
 /** Error raised when the worker cannot be started or a request fails. */
-export class LayaWorkerError extends Error {
+export class LayaWorkerError extends DeciderError {
   constructor(message: string, cause?: unknown) {
-    super(message, cause === undefined ? undefined : { cause });
+    super(message, cause);
     this.name = "LayaWorkerError";
   }
 }
@@ -215,7 +217,10 @@ const LOG_LINE_MAX = 500;
  * All methods accept an optional `AbortSignal` so callers can bound latency
  * and respect Pi session cancellation.
  */
-export class LayaWorker {
+export class LayaWorker implements Decider {
+  readonly id = "laya-local";
+  readonly remote = false;
+
   private readonly command: string;
   private readonly args: string[];
   private readonly cwd?: string;
@@ -249,7 +254,7 @@ export class LayaWorker {
   }
 
   /** Model repo reported by the worker once ready. */
-  get loadedModel(): string | undefined {
+  get model(): string | undefined {
     return this.lastModel;
   }
 
@@ -277,31 +282,30 @@ export class LayaWorker {
     return result;
   }
 
-  /**
-   * Send a decision request and parse the routing-relevant fields into a
-   * strongly typed `LayaRoutingDecision`.
-   */
-  async decide(
-    request: LayaDecisionRequest,
-    signal?: AbortSignal,
-  ): Promise<LayaRoutingDecision> {
+  /** Ask the worker the request's questions; answers are parsed by the caller. */
+  async decide(request: DecisionRequest, signal?: AbortSignal): Promise<DeciderResult> {
     const started = Date.now();
 
     const response = await this.request(
       "decide",
-      { text: request.text, state: request.state, questions: request.questions },
+      { text: request.text, questions: request.questions },
       signal,
     );
     if (!isDecisionResponse(response)) {
       throw new LayaWorkerError("Laya worker returned a malformed decision");
     }
 
-    return parseDecision(response, Date.now() - started);
+    return {
+      deciderId: this.id,
+      model: typeof response.model === "string" ? response.model : (this.lastModel ?? "unknown"),
+      answers: response.answers,
+      latencyMs: Date.now() - started,
+    };
   }
 
-  /** Warm the worker up without sending a real decision. */
-  async warmup(signal?: AbortSignal): Promise<LayaHealthResponse> {
-    return this.health(signal);
+  /** Start the worker and load its model without sending a real decision. */
+  async warmup(signal?: AbortSignal): Promise<void> {
+    await this.health(signal);
   }
 
   /**
@@ -575,36 +579,6 @@ export class LayaWorker {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse a raw decide response into the routing-relevant shape. */
-export function parseDecision(
-  response: LayaDecisionResponse,
-  latencyMs: number,
-): LayaRoutingDecision {
-  const tierAnswer = choiceOf(response.answers.reasoning_demand);
-  const tier = tierAnswer && isTier(tierAnswer.choice) ? tierAnswer.choice : null;
-
-  const explorationAnswer = choiceOf(response.answers.needs_exploration);
-
-  return {
-    tier,
-    tierConfidence: tier ? tierAnswer!.confidence : 0,
-    needsExploration: explorationAnswer?.choice === "yes",
-    explorationConfidence: explorationAnswer?.confidence ?? 0,
-    latencyMs,
-  };
-}
-
-/** Extract a choice answer, tolerating malformed JSON from the worker. */
-function choiceOf(answer: LayaAnswer | undefined): { choice: string; confidence: number } | null {
-  const value: unknown = answer;
-  if (!isRecord(value) || value.type !== "choice" || typeof value.choice !== "string") return null;
-  const confidence = value.confidence;
-  return {
-    choice: value.choice,
-    confidence: typeof confidence === "number" && Number.isFinite(confidence) ? confidence : 0,
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -613,7 +587,7 @@ function isHealthResponse(value: unknown): value is LayaHealthResponse {
   return isRecord(value) && typeof value.ready === "boolean";
 }
 
-/** Only `answers` is required; parseDecision checks each answer it reads. */
+/** Only `answers` is required; `parseDecision` checks each answer it reads. */
 function isDecisionResponse(value: unknown): value is LayaDecisionResponse {
   return isRecord(value) && isRecord(value.answers);
 }
@@ -629,7 +603,3 @@ function isWorkerMessage(value: unknown): value is WorkerMessage {
   );
 }
 
-/** Type guard for Tier values parsed from external JSON. */
-function isTier(value: string): value is Tier {
-  return TIER_ORDER.includes(value as Tier);
-}

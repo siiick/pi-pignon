@@ -11,7 +11,7 @@ import {
   type PolicyOutput,
   type Price,
   type Profile,
-  type LayaRoutingDecision,
+  type RoutingDecision,
   type RoutingTable,
   TIER_ORDER,
   FORMS,
@@ -21,7 +21,7 @@ import {
 
 /** Derive the task form from a Laya decision. */
 export function formOf(
-  decision: LayaRoutingDecision,
+  decision: RoutingDecision,
   minConfidenceForm = DEFAULT_THRESHOLDS.minConfidenceForm,
 ): Form {
   if (!decision.needsExploration && decision.explorationConfidence >= minConfidenceForm) {

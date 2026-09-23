@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decide, formOf, paybackRequests, profileFromModel } from "../src/policy.js";
-import { type Profile, type LayaRoutingDecision, type Price, type RoutingTable, DEFAULT_THRESHOLDS, DEFAULT_TIERS } from "../src/types.js";
+import { type Profile, type RoutingDecision, type Price, type RoutingTable, DEFAULT_THRESHOLDS, DEFAULT_TIERS } from "../src/types.js";
 
 /** Table where every cell has its own model, so lateral switches are real. */
 const DISTINCT_TIERS: RoutingTable = {
@@ -24,7 +24,7 @@ const DISTINCT_TIERS: RoutingTable = {
 
 describe("formOf", () => {
   it("returns direct when exploration is false and confidence is high", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
       needsExploration: false,
@@ -35,7 +35,7 @@ describe("formOf", () => {
   });
 
   it("returns exploration when needsExploration is true even with high confidence", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
       needsExploration: true,
@@ -46,7 +46,7 @@ describe("formOf", () => {
   });
 
   it("returns exploration when confidence is below threshold", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "trivial",
       tierConfidence: 0.9,
       needsExploration: false,
@@ -73,7 +73,7 @@ describe("decide fail-open", () => {
   });
 
   it("returns null target when tier is null", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: null,
       tierConfidence: 0.9,
       needsExploration: false,
@@ -96,7 +96,7 @@ describe("decide fail-open", () => {
 // ---------------------------------------------------------------------------
 
 describe("decide from an unrouted model", () => {
-  const confident: LayaRoutingDecision = {
+  const confident: RoutingDecision = {
     tier: "standard",
     tierConfidence: 0.9,
     needsExploration: false,
@@ -141,7 +141,7 @@ describe("decide from an unrouted model", () => {
 
 describe("decide tier logic", () => {
   it("upgrades when confidence exceeds upgrade threshold", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "hard",
       tierConfidence: 0.6,
       needsExploration: false,
@@ -158,7 +158,7 @@ describe("decide tier logic", () => {
   });
 
   it("refuses upgrade when confidence is below upgrade threshold", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "hard",
       tierConfidence: 0.3,
       needsExploration: false,
@@ -175,7 +175,7 @@ describe("decide tier logic", () => {
   });
 
   it("downgrades when confidence exceeds downgrade threshold", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "trivial",
       tierConfidence: 0.9,
       needsExploration: false,
@@ -192,7 +192,7 @@ describe("decide tier logic", () => {
   });
 
   it("refuses downgrade when confidence is below downgrade threshold", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "trivial",
       tierConfidence: 0.5,
       needsExploration: false,
@@ -209,7 +209,7 @@ describe("decide tier logic", () => {
   });
 
   it("keeps current profile when target matches current", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
       needsExploration: false,
@@ -232,7 +232,7 @@ describe("decide tier logic", () => {
 
 describe("decide cache guard", () => {
   it("refuses downgrade when context exceeds cache guard", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "trivial",
       tierConfidence: 0.95,
       needsExploration: false,
@@ -249,7 +249,7 @@ describe("decide cache guard", () => {
   });
 
   it("refuses lateral switch when context exceeds cache guard", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
       needsExploration: true,
@@ -267,7 +267,7 @@ describe("decide cache guard", () => {
   });
 
   it("allows upgrade even when context exceeds cache guard", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "hard",
       tierConfidence: 0.9,
       needsExploration: false,
@@ -290,7 +290,7 @@ describe("decide cache guard", () => {
 
 describe("decide form logic", () => {
   it("bumps trivial to standard when exploration is needed", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "trivial",
       tierConfidence: 0.9,
       needsExploration: true,
@@ -308,7 +308,7 @@ describe("decide form logic", () => {
   });
 
   it("allows lateral direct -> exploration within same tier", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
       needsExploration: true,
@@ -327,7 +327,7 @@ describe("decide form logic", () => {
 
   it("does not switch between cells that share the same model", () => {
     // DEFAULT_TIERS maps standard/direct and standard/exploration to one model.
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
       needsExploration: true,
@@ -344,7 +344,7 @@ describe("decide form logic", () => {
   });
 
   it("allows lateral exploration -> direct within same tier", () => {
-    const d: LayaRoutingDecision = {
+    const d: RoutingDecision = {
       tier: "hard",
       tierConfidence: 0.9,
       needsExploration: false,
@@ -397,7 +397,7 @@ describe("profileFromModel", () => {
 // ---------------------------------------------------------------------------
 
 describe("decide cooldown", () => {
-  const downgrade: LayaRoutingDecision = {
+  const downgrade: RoutingDecision = {
     tier: "trivial",
     tierConfidence: 0.95,
     needsExploration: false,
@@ -453,7 +453,7 @@ describe("decide cooldown", () => {
 // ---------------------------------------------------------------------------
 
 describe("decide switch cost", () => {
-  const downgrade: LayaRoutingDecision = {
+  const downgrade: RoutingDecision = {
     tier: "trivial",
     tierConfidence: 0.95,
     needsExploration: false,

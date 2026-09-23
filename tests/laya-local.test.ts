@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
-import { LayaWorker, LayaWorkerError, parseDecision, workerEnv } from "../src/laya-worker.js";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+import { LayaWorker, LayaWorkerError, resolveWorkerDir, workerEnv } from "../src/deciders/laya-local.js";
+import { parseDecision } from "../src/deciders/parse.js";
+import { DeciderError } from "../src/deciders/types.js";
 
 // ---------------------------------------------------------------------------
 // Fake worker process
@@ -163,7 +168,7 @@ describe("LayaWorker", () => {
     expect(result).toEqual(healthResult);
     expect(spawnFn).toHaveBeenCalledTimes(1);
     expect(worker.isReady).toBe(true);
-    expect(worker.loadedModel).toBe("aac6fef/laya-mlx");
+    expect(worker.model).toBe("aac6fef/laya-mlx");
   });
 
   it("reuses one process across requests", async () => {
@@ -175,10 +180,13 @@ describe("LayaWorker", () => {
     expect(spawnFn).toHaveBeenCalledTimes(1);
   });
 
-  it("parses a routing decision from the worker", async () => {
+  it("returns the worker's answers as a decider result", async () => {
     const { worker } = makeHarness();
 
-    const result = await worker.decide(decideRequest);
+    const raw = await worker.decide(decideRequest);
+
+    expect(raw).toMatchObject({ deciderId: "laya-local", model: "aac6fef/laya-mlx" });
+    const result = parseDecision(raw.answers, raw.latencyMs);
 
     expect(result.tier).toBe("hard");
     expect(result.tierConfidence).toBe(0.92);
@@ -207,7 +215,8 @@ describe("LayaWorker", () => {
         }),
     });
 
-    const result = await worker.decide({ text: "test", questions: {} });
+    const raw = await worker.decide({ text: "test", questions: {} });
+    const result = parseDecision(raw.answers, raw.latencyMs);
 
     expect(result.tier).toBeNull();
     expect(result.needsExploration).toBe(false);
@@ -233,9 +242,9 @@ describe("LayaWorker", () => {
         }),
     });
 
-    const result = await worker.decide({ text: "test", questions: {} });
+    const raw = await worker.decide({ text: "test", questions: {} });
 
-    expect(result.tier).toBeNull();
+    expect(parseDecision(raw.answers, raw.latencyMs).tier).toBeNull();
   });
 
   it("rejects when the worker reports a failure", async () => {
@@ -328,7 +337,7 @@ describe("LayaWorker", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     stale.emit("exit", null, "SIGKILL");
 
-    await expect(pending).resolves.toMatchObject({ tier: "hard" });
+    await expect(pending).resolves.toMatchObject({ answers: { reasoning_demand: { choice: "hard" } } });
     expect(worker.isReady).toBe(true);
   });
 
@@ -521,28 +530,20 @@ describe("wire format", () => {
     expect(error.cause).toBe(root);
     expect("cause" in new LayaWorkerError("no cause")).toBe(false);
   });
+
+  it("is a DeciderError, so the router can treat every decider alike", () => {
+    expect(new LayaWorkerError("x")).toBeInstanceOf(DeciderError);
+  });
 });
 
-describe("parseDecision", () => {
-  it("treats malformed answers as missing", () => {
-    const decision = parseDecision(
-      {
-        model: "m",
-        answers: {
-          reasoning_demand: { type: "choice", choice: "hard", confidence: "very" },
-          needs_exploration: { type: "choice", choice: 42 },
-        } as never,
-      },
-      5,
-    );
+describe("resolveWorkerDir", () => {
+  it("finds the bundled worker script from the decider's own location", () => {
+    const dir = resolveWorkerDir({});
+    expect(existsSync(join(dir, "laya_worker.py"))).toBe(true);
+  });
 
-    expect(decision).toEqual({
-      tier: "hard",
-      tierConfidence: 0,
-      needsExploration: false,
-      explorationConfidence: 0,
-      latencyMs: 5,
-    });
+  it("prefers LAYA_WORKER_DIR", () => {
+    expect(resolveWorkerDir({ LAYA_WORKER_DIR: "/opt/laya" })).toBe("/opt/laya");
   });
 });
 

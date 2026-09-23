@@ -34,7 +34,7 @@ service, no port, and nothing to start manually — but the worker's virtual
 environment must exist once:
 
 ```bash
-cd ~/projects/localLaya/laya-llm-router/worker
+cd ~/projects/localLaya/pignon/worker
 uv sync
 ```
 
@@ -44,17 +44,17 @@ decision loads the checkpoint (downloaded from Hugging Face on first run).
 ### 2. Install the extension into Pi
 
 ```bash
-cd ~/projects/localLaya/laya-llm-router
+cd ~/projects/localLaya/pignon
 # Symlink so Pi discovers it automatically
-ln -s $(pwd) ~/.pi/agent/extensions/laya-llm-router
+ln -s $(pwd) ~/.pi/agent/extensions/pignon
 ```
 
 Or copy it, without the virtual environment (its absolute paths break when
 moved), and recreate that in place:
 ```bash
 rsync -a --exclude node_modules --exclude worker/.venv \
-  ~/projects/localLaya/laya-llm-router ~/.pi/agent/extensions/
-(cd ~/.pi/agent/extensions/laya-llm-router/worker && uv sync)
+  ~/projects/localLaya/pignon ~/.pi/agent/extensions/
+(cd ~/.pi/agent/extensions/pignon/worker && uv sync)
 ```
 
 ### 3. Restart Pi
@@ -148,24 +148,27 @@ session starts. `/laya` shows which file is in use.
 ## Project structure
 
 ```
-laya-llm-router/
+pignon/
 ├── src/
-│   ├── types.ts        # Domain types and constants (zero dependencies)
-│   ├── config.ts       # Optional JSON config file, merged over the defaults
-│   ├── laya-worker.ts  # Supervises the stdio worker (spawn + JSON-lines RPC)
-│   ├── policy.ts       # Pure routing policy (the core logic)
-│   └── extension.ts    # Pi ExtensionAPI wiring
+│   ├── types.ts             # Domain types and constants (zero dependencies)
+│   ├── config.ts            # Optional JSON config file, merged over the defaults
+│   ├── deciders/
+│   │   ├── types.ts         # Decider interface: the seam between router and classifier
+│   │   ├── questions.ts     # The tier and exploration questions sent to every decider
+│   │   ├── parse.ts         # Raw answers -> RoutingDecision (shared by all deciders)
+│   │   └── laya-local.ts    # Local Laya decider: supervises the stdio worker
+│   ├── policy.ts            # Pure routing policy (the core logic)
+│   ├── router.ts            # Per-prompt routing over a Pi-free RouterHost
+│   ├── stats.ts             # /laya-stats histogram
+│   ├── ui.ts                # Spinner and decision cards
+│   └── extension.ts         # Pi ExtensionAPI wiring
 ├── worker/
 │   ├── laya_worker.py       # Long-lived laya-mlx process (JSON-lines on stdio)
-│   ├── test_laya_worker.py  # 8 stdlib unittest tests for the worker
+│   ├── test_laya_worker.py  # stdlib unittest tests for the worker
 │   ├── pyproject.toml       # uv project: laya-mlx
 │   └── README.md            # Worker protocol and manual smoke test
-├── tests/
-│   ├── policy.test.ts            # 38 unit tests for routing logic
-│   ├── config.test.ts            # 10 tests for config loading/validation
-│   ├── laya-worker.test.ts       # 27 unit tests for spawn/RPC/parsing/env
-│   ├── extension.test.ts         # 11 tests for Pi wiring & commands
-│   └── extension-routing.test.ts # 19 tests for live routing end to end
+├── tests/                   # Vitest suites, one per module
+├── docs/PLAN-deciders.md    # Roadmap: Jev decider, configurable tiers, publishing
 ├── package.json
 ├── tsconfig.json
 └── vitest.config.ts

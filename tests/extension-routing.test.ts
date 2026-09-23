@@ -3,34 +3,51 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { LayaRoutingDecision, Price, RouterLogEntry } from "../src/types.js";
+import type { Decider, DeciderResult, DecisionRequest } from "../src/deciders/types.js";
+import { createExtension } from "../src/extension.js";
+import { hashPrompt } from "../src/router.js";
+import { buildStatsLines } from "../src/stats.js";
+import type { Price, RouterLogEntry, RoutingDecision } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
-// Worker stub: the routing tests only need decide() to return a fixed answer.
+// Decider fake: the routing tests script decisions through workerDecide.
 // ---------------------------------------------------------------------------
 
-const workerDecide = vi.fn<() => Promise<LayaRoutingDecision>>();
-const workerWarmup = vi.fn<() => Promise<unknown>>();
+const workerDecide = vi.fn<(request: DecisionRequest) => Promise<RoutingDecision>>();
+const workerWarmup = vi.fn<() => Promise<void>>();
 const workerState = { ready: true, logs: [] as string[] };
 
-vi.mock("../src/laya-worker.js", () => ({
-  LayaWorker: class {
-    loadedModel = "stub";
-    get isReady() {
-      return workerState.ready;
-    }
-    get recentLogs() {
-      return workerState.logs;
-    }
-    decide = workerDecide;
-    warmup = workerWarmup;
-    health = vi.fn();
-    stop = vi.fn();
-  },
-  LayaWorkerError: class extends Error {},
-}));
+/** The raw answers a decider would return for a routing decision. */
+function answersFor(d: RoutingDecision): DeciderResult["answers"] {
+  return {
+    ...(d.tier ? { reasoning_demand: { type: "choice", choice: d.tier, confidence: d.tierConfidence } } : {}),
+    needs_exploration: {
+      type: "choice",
+      choice: d.needsExploration ? "yes" : "no",
+      confidence: d.explorationConfidence,
+    },
+  };
+}
 
-const { default: layaRouterExtension, buildStatsLines, hashPrompt } = await import("../src/extension.js");
+const fakeDecider: Decider = {
+  id: "fake",
+  remote: false,
+  model: "stub",
+  get isReady() {
+    return workerState.ready;
+  },
+  get recentLogs() {
+    return workerState.logs;
+  },
+  warmup: () => workerWarmup(),
+  decide: async (request) => {
+    const d = await workerDecide(request);
+    return { deciderId: "fake", model: "stub", answers: answersFor(d), latencyMs: d.latencyMs };
+  },
+  stop: vi.fn(),
+};
+
+const layaRouterExtension = createExtension({ createDecider: () => fakeDecider });
 
 // ---------------------------------------------------------------------------
 // Pi mock whose setModel behaves like Pi: it emits model_select "set".
@@ -101,7 +118,7 @@ function setup(initial: Model, options: SetupOptions = {}) {
   return { pi, ctx, emit, prompt, command, lastEntry };
 }
 
-const decision = (overrides: Partial<LayaRoutingDecision>): LayaRoutingDecision => ({
+const decision = (overrides: Partial<RoutingDecision>): RoutingDecision => ({
   tier: "standard",
   tierConfidence: 0.95,
   needsExploration: false,
@@ -114,7 +131,7 @@ const GLM = { provider: "openrouter", id: "z-ai/glm-5.3" };
 
 beforeEach(() => {
   workerDecide.mockReset();
-  workerWarmup.mockReset().mockResolvedValue({ loaded_model: "stub" });
+  workerWarmup.mockReset().mockResolvedValue(undefined);
   workerState.ready = true;
   workerState.logs = [];
 });
@@ -241,7 +258,7 @@ describe("prompt handling", () => {
 
     await prompt("x".repeat(50_000));
 
-    const request = (workerDecide.mock.calls[0] as unknown[])[0] as { text: string };
+    const request = workerDecide.mock.calls[0]![0];
     expect(request.text).toHaveLength(4_000);
   });
 

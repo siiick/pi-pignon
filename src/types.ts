@@ -149,8 +149,8 @@ export interface RouterConfig {
   thresholds: Thresholds;
 }
 
-/** The raw decision returned by the Laya service for a prompt. */
-export interface LayaRoutingDecision {
+/** Routing-relevant reading of a decider's answers (see `deciders/parse.ts`). */
+export interface RoutingDecision {
   tier: Tier | null;
   tierConfidence: number;
   needsExploration: boolean;
@@ -160,7 +160,7 @@ export interface LayaRoutingDecision {
 
 /** Inputs to the routing policy. */
 export interface PolicyInput {
-  decision: LayaRoutingDecision | null;
+  decision: RoutingDecision | null;
   /** Profile of the current model, or null when it is not in the routing table. */
   current: Profile | null;
   contextTokens: number;
