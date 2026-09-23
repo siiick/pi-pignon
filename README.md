@@ -34,16 +34,16 @@ The answers are fed into a **pure policy function** that decides:
 
 ### 1. Install the extension
 
-pignon installs straight from GitHub (it is not on npm yet). Pin a release
-tag, so updates only happen when you change it:
-
 ```bash
-pi install git:github.com/siiick/pignon@v0.1.0
+pi install npm:pi-pignon
 ```
 
-To upgrade, install the newer tag the same way; it replaces the old one.
-Releases are listed on the [releases page](https://github.com/siiick/pignon/releases).
-Without a tag, `pi update --extensions` follows the `main` branch.
+`pi update --extensions` then keeps it up to date. To stay on one version,
+pin it (`pi install npm:pi-pignon@0.1.1`); installing another version replaces
+it. Releases are listed on the [releases page](https://github.com/siiick/pignon/releases).
+
+To run unreleased changes, install from GitHub instead:
+`pi install git:github.com/siiick/pignon` (follows `main`).
 
 ### 2. Give it a decision model
 

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-09-23
+
+- Published on npm: `pi install npm:pi-pignon`.
 
 - `/pignon log`, `config`, `doctor` and `/pignon-stats` (and `compare`) open in
   a scrollable overlay that closes with Esc. They used to render in a widget,

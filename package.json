@@ -1,6 +1,6 @@
 {
-  "name": "pignon",
-  "version": "0.1.0",
+  "name": "pi-pignon",
+  "version": "0.1.1",
   "description": "Pi coding agent extension that shifts to the right LLM for each prompt, using a local (Laya) or remote (Jev) decision model to judge task difficulty",
   "keywords": [
     "pi-package",
