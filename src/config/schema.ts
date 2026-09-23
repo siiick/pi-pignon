@@ -221,4 +221,4 @@ export type TierFile = Static<typeof TierFileSchema>;
 export type ConfigFile = Static<typeof ConfigFileSchema>;
 
 /** Where the published JSON Schema lives, for the `$schema` key of config files. */
-export const CONFIG_SCHEMA_URL = "https://unpkg.com/pignon/schema/config.schema.json";
+export const CONFIG_SCHEMA_URL = "https://raw.githubusercontent.com/siiick/pignon/main/schema/config.schema.json";

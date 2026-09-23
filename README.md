@@ -310,7 +310,7 @@ Tiers refer to models by name. The built-in names are `fast`, `balanced`,
 
 ```json
 {
-  "$schema": "https://unpkg.com/pignon/schema/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/siiick/pignon/main/schema/config.schema.json",
   "version": 2,
   "models": {
     "reasoner": { "provider": "anthropic", "modelId": "claude-opus-5-5", "thinking": "high" }
