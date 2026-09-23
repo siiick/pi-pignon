@@ -1,5 +1,8 @@
 # <img src="docs/assets/pignon.svg" width="40" height="40" alt="" align="top"> pignon
 
+[![CI](https://github.com/siiick/pignon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/siiick/pignon/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/siiick/pignon)](LICENSE)
+
 Pi agent extension that shifts to the right LLM for each prompt, the way a
 bike changes sprocket (*pignon*): a small **decision model** judges how hard
 the prompt is, and pignon looks the answer up in **your routing table**.
