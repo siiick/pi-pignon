@@ -9,6 +9,7 @@
 import Type, { type Static } from "typebox";
 
 import { THINKING_LEVELS } from "../types.js";
+import { PRESETS, PRESET_NAMES } from "./presets.js";
 
 const ThinkingSchema = Type.Enum([...THINKING_LEVELS], {
   description: "Pi thinking level to set with the model. Pi clamps it to what the model supports.",
@@ -162,6 +163,11 @@ export const ConfigFileSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String()),
     version: Type.Optional(Type.Literal(2, { description: "Config format version." })),
+    extends: Type.Optional(
+      Type.Enum([...PRESET_NAMES], {
+        description: `Model preset for the built-in names, applied before \`models\`: ${PRESET_NAMES.map((n) => `\`${n}\` (${PRESETS[n].description})`).join("; ")}.`,
+      }),
+    ),
     deciders: Type.Optional(DecidersSchema),
     strategy: Type.Optional(StrategySchema),
     models: Type.Optional(

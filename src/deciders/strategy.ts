@@ -40,6 +40,11 @@ export class StrategyDecider implements Decider {
     this.remote = deciders.some((d) => d.remote);
   }
 
+  /** The combined deciders, in configured order. */
+  get members(): readonly Decider[] {
+    return this.deciders;
+  }
+
   /** Ready when any decider can answer: the others are skipped. */
   get isReady(): boolean {
     return this.deciders.some((d) => d.isReady);

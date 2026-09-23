@@ -11,6 +11,14 @@
       "const": 2,
       "description": "Config format version."
     },
+    "extends": {
+      "enum": [
+        "openrouter",
+        "anthropic",
+        "openai"
+      ],
+      "description": "Model preset for the built-in names, applied before `models`: `openrouter` (OpenRouter: DeepSeek flash models, GLM for reasoning, HY4 as agent (the built-in table)); `anthropic` (Anthropic: Haiku for small edits, Sonnet for the rest, Opus for hard reasoning); `openai` (OpenAI: GPT-6 Luna for small edits, GPT-5.6 Terra for the rest, GPT-6 Sol for reasoning, Codex as agent)."
+    },
     "deciders": {
       "type": "array",
       "items": {

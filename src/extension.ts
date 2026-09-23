@@ -13,6 +13,8 @@
  *   /pignon log [clear]    -> recent decider diagnostics
  *   /pignon config [clear] -> routing table and settings in use
  *   /pignon config migrate -> convert a laya-router config file
+ *   /pignon init [preset]  -> write a starter config file
+ *   /pignon doctor [clear] -> check deciders, models and config
  *   /pignon-stats [clear]  -> session statistics
  *   /pignon-stats compare  -> how two deciders agree (parallel strategy)
  *   /pignon-stats export [path] -> decisions as JSON lines
@@ -31,14 +33,24 @@ import type {
 
 import { buildCompareLines, defaultExportPath, exportDecisions } from "./compare.js";
 import { describeConfig } from "./config/describe.js";
-import { loadConfig } from "./config/load.js";
+import { configPaths, loadConfig } from "./config/load.js";
 import { migrateConfigFile } from "./config/migrate.js";
+import { PRESETS, PRESET_NAMES, isPresetName } from "./config/presets.js";
 import { createDecider as createConfiguredDecider } from "./deciders/create.js";
 import type { Decider } from "./deciders/types.js";
 import { type RouterHost, routePrompt } from "./router.js";
 import { buildStatsLines } from "./stats.js";
 import type { RouterConfig, RouterLogEntry, RouterMode } from "./types.js";
 import { hideDeciding, renderDecisionCard, showDeciding } from "./ui.js";
+import {
+  type ModelLookup,
+  choosePreset,
+  detectDeciders,
+  modelStatus,
+  runDoctor,
+  starterConfig,
+  writeStarterConfig,
+} from "./onboarding.js";
 
 /** Decider log lines shown by `/pignon log`. */
 const LOG_WIDGET_LINES = 30;
@@ -48,7 +60,21 @@ const ENTRY_TYPE = "pignon-decision";
 /** Entry type written by laya-router; still rendered and counted. */
 const LEGACY_ENTRY_TYPE = "laya-decision";
 
-const SUBCOMMANDS = ["shadow", "live", "off", "unpin", "log", "log clear", "config", "config clear", "config migrate"];
+const SUBCOMMANDS = [
+  "shadow",
+  "live",
+  "off",
+  "unpin",
+  "log",
+  "log clear",
+  "config",
+  "config clear",
+  "config migrate",
+  "init",
+  ...PRESET_NAMES.map((name) => `init ${name}`),
+  "doctor",
+  "doctor clear",
+];
 
 type PiModel = Parameters<ExtensionAPI["setModel"]>[0];
 
@@ -263,6 +289,43 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       }
       if (arg === "config") {
         showWidget(ctx, "pignon-config", describeConfig(config, loaded.source));
+        return;
+      }
+      if (arg === "init" || arg.startsWith("init ")) {
+        const requested = arg.slice("init".length).trim();
+        if (requested && !isPresetName(requested)) {
+          notify(ctx, `pignon: unknown preset "${requested}" (${PRESET_NAMES.join(", ")})`, "error");
+          return;
+        }
+        const lookup = ctx.modelRegistry as ModelLookup<unknown>;
+        const preset = requested && isPresetName(requested) ? requested : choosePreset(lookup);
+        const result = writeStarterConfig(configPaths().path, starterConfig(preset, detectDeciders()));
+        if (!result.ok) {
+          notify(ctx, `pignon: ${result.message}`, "error");
+          return;
+        }
+        const specs = Object.values(PRESETS[preset].models);
+        const usable = specs.filter((spec) => modelStatus(spec, lookup) === "ok").length;
+        notify(
+          ctx,
+          `pignon: wrote ${result.path} (preset ${preset}, ${usable}/${specs.length} models usable); /reload to use it, /pignon doctor to check it`,
+        );
+        return;
+      }
+      if (arg === "doctor clear") {
+        showWidget(ctx, "pignon-doctor", undefined);
+        return;
+      }
+      if (arg === "doctor") {
+        showWidget(ctx, "pignon-doctor", ["pignon doctor", "  running checks…"]);
+        const lines = await runDoctor({
+          config,
+          configSource: loaded.source,
+          configErrors: loaded.errors,
+          decider,
+          lookup: ctx.modelRegistry as ModelLookup<unknown>,
+        });
+        showWidget(ctx, "pignon-doctor", [...lines, "(/pignon doctor clear to hide)"]);
         return;
       }
       if (arg === "config migrate") {

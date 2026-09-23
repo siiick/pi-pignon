@@ -76,7 +76,7 @@ function setup(initial: Model, options: SetupOptions = {}) {
     hasUI: options.hasUI ?? true,
     model: initialModel as Model | undefined,
     signal: undefined,
-    modelRegistry: { find: vi.fn(withCost) },
+    modelRegistry: { find: vi.fn(withCost), hasConfiguredAuth: vi.fn(() => true) },
     getContextUsage: vi.fn().mockReturnValue({ tokens: options.contextTokens ?? 0 }),
     ui: { notify: vi.fn(), setStatus: vi.fn(), setWidget: vi.fn() },
     sessionManager: { getEntries: vi.fn().mockReturnValue([]) },
@@ -433,6 +433,47 @@ describe("config file", () => {
 
       expect(ctx.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining(`wrote ${paths.pignon}`), "info");
       expect(JSON.parse(readFileSync(paths.pignon, "utf8"))).toMatchObject({ version: 2 });
+    }),
+  );
+
+  it(
+    "writes a starter config with /pignon init",
+    withFiles({}, async (paths) => {
+      const { ctx, command } = setup(GLM);
+
+      await command("pignon", "init anthropic");
+
+      expect(ctx.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining(`wrote ${paths.pignon} (preset anthropic, 4/4 models usable)`), "info");
+      expect(JSON.parse(readFileSync(paths.pignon, "utf8"))).toMatchObject({ version: 2, models: { reasoner: { modelId: "claude-opus-5-5" } } });
+    }),
+  );
+
+  it(
+    "refuses an unknown preset and an existing file",
+    withConfig("{}", async () => {
+      const { ctx, command } = setup(GLM);
+
+      await command("pignon", "init mistral");
+      expect(ctx.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining('unknown preset "mistral"'), "error");
+
+      await command("pignon", "init");
+      expect(ctx.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining("already exists"), "error");
+    }),
+  );
+
+  it(
+    "shows the doctor report in a widget",
+    withConfig("{}", async () => {
+      const { ctx, command } = setup(GLM);
+      workerDecide.mockResolvedValueOnce(decision({}));
+
+      await command("pignon", "doctor");
+
+      const [name, lines] = ctx.ui.setWidget.mock.calls.at(-1) as [string, string[]];
+      expect(name).toBe("pignon-doctor");
+      expect(lines[0]).toBe("pignon doctor");
+      expect(lines).toContain("  ✓ fake: stub answered a test prompt in 10 ms");
+      expect(lines.at(-1)).toBe("(/pignon doctor clear to hide)");
     }),
   );
 

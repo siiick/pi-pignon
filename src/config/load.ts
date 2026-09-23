@@ -41,6 +41,7 @@ import {
   DEFAULT_THRESHOLDS,
   DEFAULT_TIERS,
 } from "./defaults.js";
+import { PRESETS, PRESET_NAMES, isPresetName } from "./presets.js";
 import {
   type ModelRef,
   type TierFile,
@@ -171,7 +172,12 @@ export function parseConfig(raw: unknown): ParsedConfig {
     else errors.push(...formatErrors("strategy", checkStrategy.Errors(raw.strategy)));
   }
   const thresholds = parseThresholds(raw.thresholds, errors);
-  const models = parseModels(raw.models, errors);
+  let base: Readonly<Record<string, ModelSpec>> = DEFAULT_MODELS;
+  if (raw.extends !== undefined) {
+    if (isPresetName(raw.extends)) base = { ...DEFAULT_MODELS, ...PRESETS[raw.extends].models };
+    else errors.push(`extends: expected one of ${PRESET_NAMES.join(", ")}`);
+  }
+  const models = parseModels(raw.models, base, errors);
   const questions = parseQuestions(raw.questions, errors);
 
   let confidenceSource: ConfidenceSource = DEFAULT_CONFIG.confidenceSource;
@@ -245,9 +251,13 @@ function parseThresholds(raw: unknown, errors: string[]): Thresholds {
   return thresholds;
 }
 
-/** Built-in models with the file's entries merged over them. Invalid entries are skipped. */
-function parseModels(raw: unknown, errors: string[]): Record<string, ModelSpec> {
-  const models: Record<string, ModelSpec> = { ...DEFAULT_MODELS };
+/** Built-in (or preset) models with the file's entries merged over them. Invalid entries are skipped. */
+function parseModels(
+  raw: unknown,
+  base: Readonly<Record<string, ModelSpec>>,
+  errors: string[],
+): Record<string, ModelSpec> {
+  const models: Record<string, ModelSpec> = { ...base };
   if (raw === undefined) return models;
   if (!isRecord(raw)) {
     errors.push("models: expected an object");

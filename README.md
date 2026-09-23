@@ -83,6 +83,18 @@ pi
 # or /reload if already running
 ```
 
+### 4. Create a config and check it
+
+```
+/pignon init          # writes ~/.pi/agent/pignon.json from the preset your Pi can use
+/reload
+/pignon doctor        # checks the config, each decider (one test decision) and each model
+/pignon live          # start routing (pignon starts in shadow mode)
+```
+
+`/pignon init anthropic` (or `openai`, `openrouter`) picks a preset
+explicitly; see [Presets](#presets). `init` never replaces an existing file.
+
 ## Commands
 
 | Command | Description |
@@ -97,6 +109,9 @@ pi
 | `/pignon config` | Show the routing table and settings in use |
 | `/pignon config clear` | Hide the config widget |
 | `/pignon config migrate` | Convert a laya-router config file to the pignon format |
+| `/pignon init [preset]` | Write a starter `pignon.json`: the preset's models (by default the one whose models Pi can use) and the deciders that can run here |
+| `/pignon doctor` | Check the config, each decider (one real test decision; for Jev that sends a fixed test prompt) and each model of the table (known to Pi, credentials set) |
+| `/pignon doctor clear` | Hide the doctor widget |
 | `/pignon-stats` | Show tier × form × confidence histogram for the session |
 | `/pignon-stats compare` | Compare two deciders over the decisions both answered (see [Using several deciders](#using-several-deciders)) |
 | `/pignon-stats export [path]` | Write the session's decisions as JSON lines (default `~/.pi/agent/pignon-exports/`); prompts are stored as hashes, never text |
@@ -222,6 +237,27 @@ Tiers refer to models by name. The built-in names are `fast`, `balanced`,
 `thinking` is one of `off`, `low`, `medium`, `high`, `xhigh`; Pi clamps it to
 what the model supports. Check model ids with `pi --list-models`.
 
+### Presets
+
+A preset fills the four built-in model names from one provider. Use it with
+`extends`, and override any name under `models`:
+
+```json
+{
+  "extends": "anthropic",
+  "models": { "fast": { "provider": "anthropic", "modelId": "claude-haiku-4-5-20251001", "thinking": "off" } }
+}
+```
+
+| Preset | `fast` | `balanced` | `reasoner` | `agent` |
+|--------|--------|------------|------------|---------|
+| `openrouter` (default) | deepseek-v4-flash-0731 · off | deepseek-v4.1-flash · low | glm-5.3 · high | hy4-preview · low |
+| `anthropic` | claude-haiku-4-5 · off | claude-sonnet-5 · low | claude-opus-5-5 · high | claude-sonnet-5 · medium |
+| `openai` | gpt-6-luna · off | gpt-5.6-terra · low | gpt-6-sol · high | gpt-5.3-codex · medium |
+
+Presets are starting points, not recommendations: check prices and quality on
+your own work (`/pignon-stats`, shadow mode).
+
 ### Write your own tiers
 
 `tiers` replaces the built-in list as a whole: 2 to 8 tiers, **easiest first**
@@ -288,6 +324,7 @@ pignon/
 │   ├── config/
 │   │   ├── schema.ts        # TypeBox schema of the config file (also the JSON Schema)
 │   │   ├── defaults.ts      # Built-in models, tiers, wording and thresholds
+│   │   ├── presets.ts       # Model presets (openrouter, anthropic, openai)
 │   │   ├── load.ts          # Read, validate and resolve the config file
 │   │   ├── migrate.ts       # /pignon config migrate (laya-router -> pignon)
 │   │   └── describe.ts      # /pignon config widget
@@ -303,6 +340,7 @@ pignon/
 │   ├── router.ts            # Per-prompt routing over a Pi-free RouterHost
 │   ├── stats.ts             # /pignon-stats histogram
 │   ├── compare.ts           # /pignon-stats compare and export
+│   ├── onboarding.ts        # /pignon init and /pignon doctor
 │   ├── ui.ts                # Spinner and decision cards
 │   └── extension.ts         # Pi ExtensionAPI wiring
 ├── worker/

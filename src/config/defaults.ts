@@ -3,20 +3,16 @@
  */
 
 import type { ModelSpec, QuestionWording, RouterConfig, StrategyConfig, Thresholds } from "../types.js";
+import { PRESETS } from "./presets.js";
 import type { TierFile } from "./schema.js";
 
 /**
- * Named models, by role. A config file can redefine any of them (e.g. point
- * `reasoner` at another model) without rewriting the tier list.
+ * Named models, by role: `fast` and `balanced` for easy work, `reasoner`
+ * (spends its budget before acting) and `agent` (spreads it over many small
+ * tool turns) for hard work. A config file can redefine any of them, or take
+ * a whole set from a preset with `extends`, without rewriting the tier list.
  */
-export const DEFAULT_MODELS: Readonly<Record<string, ModelSpec>> = {
-  fast: { provider: "openrouter", modelId: "deepseek/deepseek-v4-flash-0731", thinking: "off" },
-  balanced: { provider: "openrouter", modelId: "deepseek/deepseek-v4.1-flash", thinking: "low" },
-  // Reasoner: spends its budget before acting.
-  reasoner: { provider: "openrouter", modelId: "z-ai/glm-5.3", thinking: "high" },
-  // Agent: spreads its budget over many small tool turns.
-  agent: { provider: "openrouter", modelId: "tencent/hy4-preview", thinking: "low" },
-};
+export const DEFAULT_MODELS: Readonly<Record<string, ModelSpec>> = PRESETS.openrouter.models;
 
 /** Difficulty tiers, easiest first, in config-file form. */
 export const DEFAULT_TIERS: readonly TierFile[] = [
