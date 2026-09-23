@@ -12,6 +12,7 @@ import { type PresetName, PRESETS, PRESET_NAMES } from "./config/presets.js";
 import { CONFIG_SCHEMA_URL } from "./config/schema.js";
 import { DEFAULT_API_KEY_ENV } from "./deciders/jev.js";
 import { type WorkerLaunch, layaRuntimeStatus } from "./deciders/laya-local.js";
+import { probeLayaServe } from "./deciders/laya-serve.js";
 import { StrategyDecider } from "./deciders/strategy.js";
 import { type Decider, DeciderError } from "./deciders/types.js";
 import { buildQuestions } from "./deciders/questions.js";
@@ -45,11 +46,17 @@ export function choosePreset<M>(lookup: ModelLookup<M>): PresetName {
   return PRESET_NAMES.reduce((best, name) => (usable(name) > usable(best) ? name : best), PRESET_NAMES[0]!);
 }
 
-/** Deciders that can run here: the local model, else Jev when its key is set. */
-export function detectDeciders(
+/**
+ * The decider to start with, local first: a running laya-serve on its default
+ * address, else the experimental worker when installed, else Jev when its key
+ * is set.
+ */
+export async function detectDeciders(
   env: NodeJS.ProcessEnv = process.env,
   layaStatus: typeof layaRuntimeStatus = layaRuntimeStatus,
-): DeciderSpec[] {
+  probe: () => Promise<boolean> = () => probeLayaServe(),
+): Promise<DeciderSpec[]> {
+  if (await probe()) return [{ type: "laya-serve" }];
   if (layaStatus(env).ok) return [{ type: "laya-local" }];
   if (env[DEFAULT_API_KEY_ENV]?.trim()) return [{ type: "jev" }];
   return [];
@@ -150,8 +157,6 @@ function describeLaunch(launch: WorkerLaunch): string {
       return `the source checkout (${launch.cwd})`;
     case "path":
       return launch.command;
-    case "uvx":
-      return `uvx (${launch.args[1]}; the first start installs it)`;
   }
 }
 
@@ -179,7 +184,7 @@ async function checkDecider(
     try {
       await decider.warmup();
     } catch (err) {
-      return report.fail(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      return report.fail(`${name}: ${failureOf(decider, err)}`);
     }
   }
   try {
@@ -187,7 +192,12 @@ async function checkDecider(
     const cost = result.costUsd !== undefined ? ` · $${result.costUsd.toFixed(6)}` : "";
     report.ok(`${name}: ${result.model} answered a test prompt in ${result.latencyMs} ms${cost}`);
   } catch (err) {
-    const message = err instanceof DeciderError || err instanceof Error ? err.message : String(err);
-    report.fail(`${name}: ${message}`);
+    report.fail(`${name}: ${failureOf(decider, err)}`);
   }
+}
+
+/** An error's message without the decider id it starts with, since the line already names the decider. */
+function failureOf(decider: Decider, err: unknown): string {
+  const message = err instanceof DeciderError || err instanceof Error ? err.message : String(err);
+  return message.startsWith(`${decider.id}: `) ? message.slice(decider.id.length + 2) : message;
 }

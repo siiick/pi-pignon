@@ -8,7 +8,6 @@ import { tmpdir } from "node:os";
 import {
   LayaWorker,
   LayaWorkerError,
-  WORKER_REQUIREMENT,
   protocolProblem,
   resolveLaunch,
   resolveWorkerDir,
@@ -500,18 +499,14 @@ describe("resolveLaunch", () => {
     expect(resolveLaunch(empty())).toEqual({ command: join(dir, "bin", "pignon-laya"), args: [], source: "path" });
   });
 
-  it("falls back to uvx with a compatible version range", () => {
+  it("does not fetch the unpublished worker with uvx", () => {
     executable(join(dir, "bin", "uvx"));
 
-    expect(resolveLaunch(empty())).toEqual({
-      command: join(dir, "bin", "uvx"),
-      args: ["--from", WORKER_REQUIREMENT, "pignon-laya"],
-      source: "uvx",
-    });
+    expect(resolveLaunch(empty())).toEqual({ reason: expect.stringContaining("worker/README.md") });
   });
 
-  it("explains what to install when nothing is found", () => {
-    expect(resolveLaunch(empty())).toEqual({ reason: expect.stringContaining("uv tool install pignon-laya") });
+  it("explains where to get the worker when nothing is found", () => {
+    expect(resolveLaunch(empty())).toEqual({ reason: expect.stringContaining("experimental Laya worker is not installed") });
   });
 
   it("which() skips directories and non-executables", () => {
@@ -528,7 +523,7 @@ describe("resolveLaunch", () => {
     delete process.env.LAYA_PYTHON;
     try {
       const worker = new LayaWorker();
-      await expect(worker.warmup()).rejects.toThrow("the Laya worker is not installed");
+      await expect(worker.warmup()).rejects.toThrow("the experimental Laya worker is not installed");
       expect(worker.isReady).toBe(false);
     } finally {
       process.env.LAYA_WORKER_DIR = previous.dir;
@@ -543,7 +538,7 @@ describe("worker protocol", () => {
   it.each([
     ["0.3.0", undefined],
     ["0.3.7", undefined],
-    ["0.2.0", "upgrade it"],
+    ["0.2.0", "update it"],
     ["0.4.0", "upgrade pignon"],
     ["1.0.0", "upgrade pignon"],
   ])("protocol %s", (version, problem) => {

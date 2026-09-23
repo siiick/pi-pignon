@@ -225,8 +225,22 @@ The old `~/.pi/agent/extensions/jev-router` becomes redundant: its behavior equa
 4. ✅ **Strategies.** sequential + parallel, budget, `/pignon-stats compare|export`, attempts on card and log, stats
    per decider (escalation rate, cost).
 5. ✅ **Onboarding.** Presets + `extends`, `/pignon init|doctor|config`, JSON Schema generation.
-6. **Publish.** PyPI `pignon-laya` + uvx launcher + protocol check, docs, package metadata, live test, `npm pack` dry-run, and a test install
-   into a clean `~/.pi` via `pi install`/symlink. Retire `jev-router`.
+6. **Publish.** ~~PyPI `pignon-laya` + uvx launcher~~ (dropped, see below) + protocol check, docs, package metadata, live test,
+   `npm pack` dry-run, and a test install into a clean `~/.pi` via `pi install`/symlink. Retire `jev-router`.
+7. ✅ **laya-serve.** `laya-serve` decider over the Jev client (no key, local when on loopback), detected by
+   `/pignon init`, documented as the way to run Laya locally; `laya-local` becomes experimental.
+
+## Decision (2026-09-23): laya-serve instead of publishing pignon-laya
+
+The official `laya` package already ships `laya-serve`, a server speaking Jev's
+`POST /v1/systemone`. Benchmarked through pignon's own deciders on 12 prompts × 5 rounds:
+same tier and exploration answers on 12/12 (probabilities equal to ~0.001), p50 75 ms
+against 61 ms for the MLX worker, 2–3 s restart (18 s on the very first run), 712 MB
+installed against 258 MB. A stopped server refuses connections within milliseconds, so
+prompts are never held. Publishing our own package would duplicate it for ~14 ms, so
+`pignon-laya` stays in the repository, unpublished (PyPI's `Private :: Do Not Upload`
+classifier), and the uvx launcher is removed. A `serve` command upstream in laya-mlx
+would bring MLX speed to everyone; to propose there.
 
 ## Decisions (2026-09-23)
 

@@ -1,7 +1,7 @@
 [project]
 name = "pignon-laya"
 version = "0.1.0"
-description = "Local Laya decision worker for pignon, the model router for the Pi coding agent (Apple Silicon, laya-mlx)"
+description = "Experimental local Laya decision worker for pignon, the model router for the Pi coding agent (Apple Silicon, laya-mlx)"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -10,6 +10,8 @@ authors = [{ name = "Nicolas Chaintron" }]
 keywords = ["pi-coding-agent", "llm-router", "laya", "mlx", "apple-silicon"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    # Not published: PyPI rejects uploads with this classifier.
+    "Private :: Do Not Upload",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",

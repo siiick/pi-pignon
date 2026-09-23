@@ -182,7 +182,7 @@ export interface Thresholds {
   layaTimeoutMs: number;
 }
 
-/** The local Laya worker (Apple Silicon). */
+/** Pignon's own Laya worker (experimental, Apple Silicon, not published). */
 export interface LayaLocalDeciderSpec {
   type: "laya-local";
   /** Timeout for one decision; defaults to `thresholds.layaTimeoutMs`. */
@@ -201,7 +201,19 @@ export interface JevDeciderSpec {
   maxRetries?: number;
 }
 
-export type DeciderSpec = LayaLocalDeciderSpec | JevDeciderSpec;
+/** A Laya model served by the official `laya-serve` (Jev-compatible HTTP API). */
+export interface LayaServeDeciderSpec {
+  type: "laya-serve";
+  /** Server root; defaults to http://127.0.0.1:8000, laya-serve's default port. */
+  url?: string;
+  /** Laya checkpoint (`english`, `multilingual`, `typed-decisions`); the server picks one when omitted. */
+  model?: string;
+  /** Environment variable holding the server's key (its LAYA_API_KEY), when it requires one. */
+  apiKeyEnv?: string;
+  timeoutMs?: number;
+}
+
+export type DeciderSpec = LayaServeDeciderSpec | LayaLocalDeciderSpec | JevDeciderSpec;
 
 /** How several deciders are combined (see `deciders/strategy.ts`). */
 export interface StrategyConfig {

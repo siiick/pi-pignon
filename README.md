@@ -1,12 +1,12 @@
-# pignon
+# pignon <img src="https://www.realclipart.com/png/small/61-613325_gears-clipart-transparent-gear-3d-icon.png" alt="Gears Clipart Transparent - Gear 3d Icon @realclipart.com">
 
 Pi agent extension that shifts to the right LLM for each prompt, the way a
 bike changes sprocket (*pignon*): a small **decision model** judges how hard
 the prompt is, and pignon looks the answer up in **your routing table**.
 
-- Decisions come from a **local Laya System-1 model** (~7–14 ms on Apple
-  Silicon, via laya-mlx) or from **TypeSafe's hosted Jev model** (~70–500 ms,
-  any platform, needs an API key)
+- Decisions come from a **local Laya System-1 model**, served on your machine
+  by the official `laya-serve` (~75 ms per decision on Apple Silicon), or from
+  **TypeSafe's hosted Jev model** (~70–500 ms, needs an API key)
 - You choose the models and write your own difficulty tiers
 - Strongly typed TypeScript, config checked against a published JSON Schema
 
@@ -37,20 +37,32 @@ pi install npm:pignon
 
 ### 2. Give it a decision model
 
-pignon needs the local Laya model (Apple Silicon Macs), Jev (an API key), or
-both. With no `deciders` setting it uses Laya when it can run, else Jev when
-`TYPESAFE_API_KEY` is set.
+pignon needs a local Laya server, Jev (an API key), or both. `/pignon init`
+(step 4) finds what is available and writes it into your config.
 
-**Local: Laya.** Install [uv](https://docs.astral.sh/uv/) (`brew install uv`).
-That's all: pignon starts the worker with `uvx`, which fetches the
-[`pignon-laya`](https://pypi.org/project/pignon-laya/) package and MLX on first
-use and downloads the model from Hugging Face (about 850 MB), then keeps it in
-uv's cache, outside Pi. The first start takes a few minutes; prompts are not
-held while it loads. To install the worker permanently instead:
+**Local: Laya, with `laya-serve`.** Laya's official package ships a server
+that speaks the same API as Jev, so pignon talks to it like to Jev, on your
+machine. Install it with [uv](https://docs.astral.sh/uv/) (`brew install uv`)
+or pipx, then start it:
 
 ```bash
-uv tool install pignon-laya     # later: uv tool upgrade pignon-laya
+uv tool install "laya[serve]"             # or: pipx install "laya[serve]"
+LAYA_HOST=127.0.0.1 laya-serve            # listens on http://127.0.0.1:8000
 ```
+
+- Always set `LAYA_HOST=127.0.0.1`: by default laya-serve listens on every
+  network interface, so other machines could use it.
+- It uses the best device it finds (NVIDIA GPU, Apple Silicon GPU, then CPU).
+- The first start downloads the checkpoints from Hugging Face and takes a
+  while; later starts take 2–3 s. By default it loads every checkpoint;
+  `LAYA_MODELS=english` loads only the English one (add `multilingual` if you
+  write prompts in other languages).
+- pignon never waits for it: while the server is down or loading, prompts
+  are not routed and keep the current model (the failure takes a few
+  milliseconds).
+
+To have it running whenever you use Pi, [start it at login](#start-laya-serve-at-login-macos).
+For another address, port or key, see [Deciders](#deciders).
 
 **Remote: Jev.** Get a key from [TypeSafe](https://typesafe.ai) and export it
 where Pi runs:
@@ -113,11 +125,11 @@ they will be removed in a later release.
 - **After each routed prompt**: a decision card below your message, e.g.
 
   ```
-  pignon laya hard/exploration p=0.92 · 143 ms  ⚡ switched to openrouter/tencent/hy4-preview · thinking low
+  pignon laya-serve hard/exploration p=0.92 · 75 ms  ⚡ switched to openrouter/tencent/hy4-preview · thinking low
     upgrade
   ```
 
-  The name after `pignon` is the decider that answered; `jev ☁` means the prompt was sent to the Jev API. With several deciders, a third line shows each one's answer and marks the one used, e.g. `laya standard 0.05 · jev ☁ hard 0.93 ✓`.
+  The name after `pignon` is the decider that answered; `☁` means the prompt left your machine (Jev, or a laya-serve on another host). With several deciders, a third line shows each one's answer and marks the one used, e.g. `laya-serve standard 0.05 · jev ☁ hard 0.93 ✓`.
 
   `👁 would switch to …` in shadow mode, `· kept current model` when the policy holds, `✗ …` on failure. Expand tool output (`Ctrl+O`) to see confidence bars for tier and exploration, the current model, context size, the decision model and the question wording version. Cards are session entries (`pignon-decision`; `laya-decision` in older sessions), so they reappear when a session is resumed and are never sent to the LLM.
 - **Footer status**: the latest verdict at a glance.
@@ -132,14 +144,11 @@ they will be removed in a later release.
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | Jev API root, when `baseURL` is not set |
 | `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Jev model, when `model` is not set |
 | `LAYA_ROUTER_CONFIG` | `~/.pi/agent/laya-router.json` | Config of laya-router, read only when there is no pignon config |
-| `LAYA_MODEL` | `aac6fef/laya-mlx` | Override the model checkpoint (e.g. `aac6fef/laya-multilingual-mlx`); fixed for the life of the worker |
-| `LAYA_MODEL_REVISION` | pinned commit for the default model, latest for others | Hugging Face revision to load; empty string means latest |
-| `LAYA_PYTHON` | *(unset)* | Run `laya_worker.py` with this interpreter instead of finding the worker (see [Laya worker](#laya-worker)) |
-| `LAYA_WORKER_DIR` | `<extension>/worker` | Directory containing `laya_worker.py` |
-| `LAYA_WORKER_SCRIPT` | `<worker dir>/laya_worker.py` | Explicit worker script path |
-| `LAYA_DTYPE` | `float16` | Worker model dtype (`float16` / `float32`) |
-| `LAYA_DEVICE` | *(auto)* | Worker device (`gpu` / `cpu` / empty) |
-| `LAYA_BATCH_SIZE` | `16` | Worker questions per forward pass |
+
+laya-serve reads its own `LAYA_*` variables (`LAYA_HOST`, `LAYA_PORT`,
+`LAYA_MODELS`, `LAYA_API_KEY`, …) when it starts; see
+[Laya's documentation](https://pypi.org/project/laya/). The variables of the
+[experimental worker](#experimental-pignons-mlx-worker) are listed in its section.
 
 ## Configuration
 
@@ -153,20 +162,26 @@ Add the `$schema` line to get autocompletion and inline errors in your editor.
 
 ### Deciders
 
-`deciders` picks the decision model. Without it, pignon chooses automatically
-(see [Installation](#installation)).
+`deciders` picks the decision model. `/pignon init` writes it for you. Without
+it, pignon uses the [experimental worker](#experimental-pignons-mlx-worker) when
+installed, else Jev when `TYPESAFE_API_KEY` is set; it does not look for
+laya-serve on its own.
 
 ```json
 {
   "deciders": [
-    { "type": "jev", "model": "jev-1.13.0" }
+    { "type": "laya-serve" }
   ]
 }
 ```
 
 | Type | Key | Default | Meaning |
 |------|-----|---------|---------|
-| `laya-local` | `timeoutMs` | `thresholds.layaTimeoutMs` | Timeout for one decision |
+| `laya-serve` | `url` | `http://127.0.0.1:8000` | Where laya-serve listens. On another machine, prompts leave yours and cards show ☁ |
+| | `model` | *(server's choice)* | Laya checkpoint: `english`, `multilingual` or `typed-decisions`. By default the server picks one from the prompt's language |
+| | `apiKeyEnv` | *(none)* | Environment variable holding the server's key, when you started it with `LAYA_API_KEY`. Your TypeSafe key is never sent to laya-serve |
+| | `timeoutMs` | `1500` | Timeout for one decision |
+| `laya-local` | | | [Experimental worker](#experimental-pignons-mlx-worker), see its section |
 | `jev` | `model` | `jev-latest` | Jev version to pin. Confidences are calibrated per version, so pinning keeps your thresholds valid |
 | | `apiKeyEnv` | `TYPESAFE_API_KEY` | Environment variable holding the key. Keys are never read from the config file |
 | | `baseURL` | TypeSafe | `https://openrouter.ai/api` to go through OpenRouter (with `"apiKeyEnv": "OPENROUTER_API_KEY"`) |
@@ -179,14 +194,14 @@ List more than one and `strategy` says how they work together:
 
 ```json
 {
-  "deciders": [{ "type": "laya-local" }, { "type": "jev" }],
+  "deciders": [{ "type": "laya-serve" }, { "type": "jev" }],
   "strategy": { "mode": "sequential", "escalateBelow": 0.75 }
 }
 ```
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `mode` | `sequential` | `sequential`: ask the deciders in order; the next one is asked only when the previous one is not ready (e.g. Laya still loading), fails, or is less confident than `escalateBelow`. Remote deciders are only called when needed. `parallel`: ask all of them at once |
+| `mode` | `sequential` | `sequential`: ask the deciders in order; the next one is asked only when the previous one is not ready, fails (e.g. laya-serve not running), or is less confident than `escalateBelow`. Remote deciders are only called when needed. `parallel`: ask all of them at once |
 | `escalateBelow` | `0.75` | Sequential: tier confidence under which the next decider is asked. The most confident answer wins |
 | `pick` | `most-confident` | Parallel: route on the most confident answer, or `first`: on the first decider in the list that answered, the others being only recorded |
 | `budgetMs` | `3000` | Wall-time limit for one decision, all deciders included |
@@ -196,7 +211,7 @@ charge and record Jev's answers next to it, then compare them.
 
 ```json
 {
-  "deciders": [{ "type": "laya-local" }, { "type": "jev" }],
+  "deciders": [{ "type": "laya-serve" }, { "type": "jev" }],
   "strategy": { "mode": "parallel", "pick": "first" }
 }
 ```
@@ -207,19 +222,83 @@ matrix, mean confidence, latency, failures and cost per decider.
 JSON lines for your own analysis. In parallel mode, every routed prompt is sent
 to Jev.
 
-### Laya worker
+Laya's confidence is low (0.05–0.27 on typical prompts: the checkpoint's
+temperatures are uncalibrated), so with the default `escalateBelow` of 0.75,
+sequential mode asks Jev on almost every prompt. Lower `escalateBelow`, or set
+`"confidenceSource": "top-probability"` (see [Other settings](#other-settings)).
 
-pignon starts the local worker with the first of:
+### Start laya-serve at login (macOS)
+
+A launchd agent keeps laya-serve running in the background and restarts it if
+it stops. Save this as `~/Library/LaunchAgents/local.laya-serve.plist`,
+replacing `/Users/you/.local/bin/laya-serve` with the output of
+`which laya-serve`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.laya-serve</string>
+  <key>ProgramArguments</key>
+  <array><string>/Users/you/.local/bin/laya-serve</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LAYA_HOST</key><string>127.0.0.1</string>
+    <key>LAYA_MODELS</key><string>english,multilingual</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardErrorPath</key><string>/tmp/laya-serve.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.laya-serve.plist   # start now and at login
+launchctl bootout gui/$(id -u)/local.laya-serve                                  # stop and disable
+```
+
+### Experimental: pignon's MLX worker
+
+pignon also has its own Laya worker (`worker/` in this repository), built on
+[laya-mlx](https://github.com/mizorewww/laya-mlx). It is a little faster than
+laya-serve on Apple Silicon (~61 ms against ~75 ms per decision, with the same
+answers), smaller to install, and needs no server: pignon starts it with the
+session and stops it afterwards. It is **experimental and not published**, and
+its interface may change; prefer laya-serve.
+
+It needs an Apple Silicon Mac and a clone of this repository:
+
+```bash
+git clone https://github.com/siiick/pignon
+uv tool install ./pignon/worker            # puts pignon-laya on PATH
+```
+
+then `"deciders": [{ "type": "laya-local" }]`. pignon starts the worker with
+the first of:
 
 1. `command` in the `laya-local` decider, e.g. `["uv", "run", "--project", "/path/to/pignon/worker", "pignon-laya"]`;
 2. `LAYA_PYTHON`, running `laya_worker.py` from `LAYA_WORKER_DIR`;
-3. a source checkout's `worker/.venv` (after `uv sync`);
-4. `pignon-laya` on `PATH` (`uv tool install pignon-laya`);
-5. `uvx --from "pignon-laya>=0.1,<0.2" pignon-laya`.
+3. a source checkout's `worker/.venv` (after `uv sync`), when pignon itself runs from that checkout;
+4. `pignon-laya` on `PATH`.
 
 `/pignon doctor` says which one is used. The worker reports its protocol
 version when it starts; pignon refuses a worker it cannot talk to and says
-which side to upgrade.
+which side to update. Its settings:
+
+| Key or variable | Default | Meaning |
+|-----------------|---------|---------|
+| `timeoutMs` (decider) | `thresholds.layaTimeoutMs` | Timeout for one decision |
+| `command` (decider) | *(found automatically)* | Command that starts the worker |
+| `LAYA_MODEL` | `aac6fef/laya-mlx` | Checkpoint (e.g. `aac6fef/laya-multilingual-mlx`); fixed for the life of the worker |
+| `LAYA_MODEL_REVISION` | pinned commit for the default model, latest for others | Hugging Face revision to load; empty string means latest |
+| `LAYA_PYTHON` | *(unset)* | Run `laya_worker.py` with this interpreter |
+| `LAYA_WORKER_DIR` | `<extension>/worker` | Directory containing `laya_worker.py` |
+| `LAYA_WORKER_SCRIPT` | `<worker dir>/laya_worker.py` | Explicit worker script path |
+| `LAYA_DTYPE` | `float16` | Model dtype (`float16` / `float32`) |
+| `LAYA_DEVICE` | *(auto)* | Device (`gpu` / `cpu` / empty) |
+| `LAYA_BATCH_SIZE` | `16` | Questions per forward pass |
 
 ### Swap a model
 
@@ -307,7 +386,7 @@ wording your thresholds were calibrated on.
 | `maxPaybackRequests` | `3` | A downgrade must recoup its cache-miss cost within this many LLM requests |
 | `assumedOutputTokensPerRequest` | `1000` | Output per request assumed when estimating what a downgrade saves |
 | `cacheGuardTokens` | `60000` | Context size above which lateral switches (and downgrades, when prices are unknown) are refused |
-| `layaTimeoutMs` | `2500` | Timeout for one Laya decision |
+| `layaTimeoutMs` | `2500` | Timeout for one decision of the experimental worker |
 
 ### Coming from laya-router
 
@@ -334,7 +413,8 @@ pignon/
 │   │   ├── types.ts         # Decider interface: the seam between router and classifier
 │   │   ├── questions.ts     # The tier and exploration questions sent to every decider
 │   │   ├── parse.ts         # Raw answers -> RoutingDecision (shared by all deciders)
-│   │   ├── laya-local.ts    # Local Laya decider: supervises the stdio worker
+│   │   ├── laya-serve.ts    # Laya through the official laya-serve (reuses the Jev client)
+│   │   ├── laya-local.ts    # Experimental: supervises pignon's own stdio worker
 │   │   ├── jev.ts           # Remote Jev decider, through @typesafe-ai/sdk
 │   │   ├── strategy.ts      # Several deciders behind one: sequential or parallel
 │   │   └── create.ts        # Config -> decider, with the automatic choice
@@ -345,10 +425,10 @@ pignon/
 │   ├── onboarding.ts        # /pignon init and /pignon doctor
 │   ├── ui.ts                # Spinner and decision cards
 │   └── extension.ts         # Pi ExtensionAPI wiring
-├── worker/
+├── worker/                  # Experimental MLX worker, not published
 │   ├── laya_worker.py       # Long-lived laya-mlx process (JSON-lines on stdio)
 │   ├── test_laya_worker.py  # stdlib unittest tests for the worker
-│   ├── pyproject.toml       # PyPI package pignon-laya (command: pignon-laya)
+│   ├── pyproject.toml       # Python package pignon-laya (command: pignon-laya)
 │   └── README.md            # Worker protocol and manual smoke test
 ├── tests/                   # Vitest suites, one per module
 │   ├── decider-contract.test.ts # What every decider must do, run against each
@@ -369,7 +449,7 @@ Work from a clone, and point Pi at it instead of the npm package:
 ```bash
 git clone https://github.com/siiick/pignon && cd pignon
 npm install
-(cd worker && uv sync)          # the worker's environment; pignon uses it before uvx
+(cd worker && uv sync)          # only for the experimental worker
 pi install ./                   # loads the clone in place, no copy
 ```
 
@@ -386,7 +466,7 @@ npm test
 # Run the Python worker tests
 npm run test:worker
 
-# One real Jev call (needs TYPESAFE_API_KEY; costs a fraction of a cent)
+# Real calls: Jev (needs TYPESAFE_API_KEY; a fraction of a cent) and the experimental worker
 npm run test:live
 
 # Regenerate schema/config.schema.json after changing src/config/schema.ts
@@ -401,8 +481,8 @@ npm run test:watch
 
 ## Design notes
 
-- <a id="privacy"></a>**Privacy**: With `laya-local`, prompts never leave the machine. With `jev`, the first 4 000 characters of each routed prompt are sent to TypeSafe (or OpenRouter), and decision cards are marked ☁. The SDK's own logging is capped at `warn` and kept in `/pignon log`, so prompts are never logged, even with `TYPESAFE_LOG_LEVEL=debug`.
-- **Fail-open**: If the worker cannot start or a decision fails, the decision is `null` and the extension keeps the current model. The worker loads its model in the background from `session_start`; prompts sent before it is ready are not routed (status shows `model loading — prompt not routed`) rather than held. It stays warm for the session, is reloaded in the background if it crashes, and is stopped on `session_shutdown`. A worker that is not ready within 5 minutes is killed.
+- <a id="privacy"></a>**Privacy**: With `laya-serve` on this machine (`127.0.0.1` or `localhost`) or `laya-local`, prompts never leave it. With `jev`, or a laya-serve on another host, the first 4 000 characters of each routed prompt are sent over the network, and decision cards are marked ☁. The SDK's own logging is capped at `warn` and kept in `/pignon log`, so prompts are never logged, even with `TYPESAFE_LOG_LEVEL=debug`.
+- **Fail-open**: If a decider cannot be reached or a decision fails, the decision is `null` and the extension keeps the current model. A laya-serve that is down refuses the connection at once, so the prompt waits a few milliseconds, not a timeout. The experimental worker loads its model in the background from `session_start`; prompts sent before it is ready are not routed (status shows `model loading — prompt not routed`) rather than held. It stays warm for the session, is reloaded in the background if it crashes, and is stopped on `session_shutdown`. A worker that is not ready within 5 minutes is killed.
 - <a id="switch-cost"></a>**Switch cost**: Switching models throws away the prompt cache: the first request on the new model reads the whole context at the uncached (or cache-write) price. Upgrades are quality-driven and only gated by confidence. A downgrade, or a move in from a model outside the table, must pay that premium back within `maxPaybackRequests` LLM requests out of what it saves per request (cheaper cache reads on the context plus cheaper output). Prices come from Pi's model registry; when either model has no price, the flat `cacheGuardTokens` limit applies instead. Lateral switches (direct ↔ exploration) are about fit rather than price and use the flat limit.
 - **Hysteresis**: After the router switches, it waits `minPromptsBetweenSwitches` prompts before the next downgrade or lateral switch, so it does not flap between models. Upgrades are never delayed.
 - **Manual pin**: If the user explicitly selects a model via `/model` or `Ctrl+P`, the extension steps back (`manualPin`) until `/pignon unpin`. The router's own switches also emit `model_select` (`source: "set"`) and are ignored.

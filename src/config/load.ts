@@ -152,7 +152,9 @@ const checkTiers = Compile(TiersSchema);
 const checkQuestions = Compile(QuestionsSchema);
 const checkConfidenceSource = Compile(ConfidenceSourceSchema);
 const checkStrategy = Compile(StrategySchema);
+const DECIDER_TYPES = Object.keys(DECIDER_SCHEMAS) as (keyof typeof DECIDER_SCHEMAS)[];
 const checkDecider = {
+  "laya-serve": Compile(DECIDER_SCHEMAS["laya-serve"]),
   "laya-local": Compile(DECIDER_SCHEMAS["laya-local"]),
   jev: Compile(DECIDER_SCHEMAS.jev),
 };
@@ -222,12 +224,12 @@ function parseDeciders(raw: unknown, errors: string[]): DeciderSpec[] | null {
   raw.slice(0, 4).forEach((entry, index) => {
     const at = `deciders[${index}]`;
     const type = isRecord(entry) ? entry.type : undefined;
-    if (type !== "laya-local" && type !== "jev") {
-      errors.push(`${at}.type: expected one of laya-local, jev`);
+    if (!DECIDER_TYPES.includes(type as never)) {
+      errors.push(`${at}.type: expected one of ${DECIDER_TYPES.join(", ")}`);
     } else if (isRecord(entry) && "apiKey" in entry) {
       errors.push(`${at}.apiKey: keep secrets out of the config file; name the environment variable with apiKeyEnv`);
-    } else if (!checkDecider[type].Check(entry)) {
-      errors.push(...formatErrors(at, checkDecider[type].Errors(entry)));
+    } else if (!checkDecider[type as keyof typeof checkDecider].Check(entry)) {
+      errors.push(...formatErrors(at, checkDecider[type as keyof typeof checkDecider].Errors(entry)));
     } else if (deciders.some((d) => d.type === type)) {
       errors.push(`${at}: ${type} is already listed`);
     } else {

@@ -40,7 +40,7 @@ import { createDecider as createConfiguredDecider } from "./deciders/create.js";
 import type { Decider } from "./deciders/types.js";
 import { type RouterHost, routePrompt } from "./router.js";
 import { buildStatsLines } from "./stats.js";
-import type { RouterConfig, RouterLogEntry, RouterMode } from "./types.js";
+import type { DeciderSpec, RouterConfig, RouterLogEntry, RouterMode } from "./types.js";
 import { hideDeciding, renderDecisionCard, showDeciding } from "./ui.js";
 import {
   type ModelLookup,
@@ -133,6 +133,8 @@ function isDecisionEntry(entry: SessionEntry): boolean {
 export interface ExtensionOptions {
   /** Builds the decider from the loaded config. Defaults to the one the config describes. */
   createDecider?: (config: RouterConfig) => Decider;
+  /** Finds the deciders `/pignon init` writes. Defaults to probing this machine. */
+  detectDeciders?: () => Promise<DeciderSpec[]>;
 }
 
 /** Build the extension; tests inject their own decider. */
@@ -299,7 +301,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
         }
         const lookup = ctx.modelRegistry as ModelLookup<unknown>;
         const preset = requested && isPresetName(requested) ? requested : choosePreset(lookup);
-        const result = writeStarterConfig(configPaths().path, starterConfig(preset, detectDeciders()));
+        const result = writeStarterConfig(configPaths().path, starterConfig(preset, await (options.detectDeciders ?? detectDeciders)()));
         if (!result.ok) {
           notify(ctx, `pignon: ${result.message}`, "error");
           return;

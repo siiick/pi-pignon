@@ -31,8 +31,42 @@
             "properties": {
               "type": {
                 "type": "string",
+                "const": "laya-serve",
+                "description": "A Laya model served by the official laya-serve (`pip install \"laya[serve]\"`). Runs on your machine unless url points elsewhere."
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https?://",
+                "description": "Server root. Default: http://127.0.0.1:8000 (laya-serve's default port)."
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Laya checkpoint: `english`, `multilingual` or `typed-decisions`. Default: chosen by the server from the prompt's language."
+              },
+              "apiKeyEnv": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Environment variable holding the server's key, when it was started with LAYA_API_KEY. Default: no key."
+              },
+              "timeoutMs": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Timeout for one decision, in milliseconds. Default: 1500."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
                 "const": "laya-local",
-                "description": "The local Laya model (Apple Silicon, laya-mlx)."
+                "description": "Experimental: pignon's own Laya worker (Apple Silicon, laya-mlx), installed from the repository's worker/ directory."
               },
               "timeoutMs": {
                 "type": "number",
@@ -46,7 +80,7 @@
                   "minLength": 1
                 },
                 "minItems": 1,
-                "description": "Command that starts the worker, e.g. [\"uv\", \"run\", \"--project\", \"/path/to/pignon/worker\", \"pignon-laya\"]. Default: found automatically (checkout, pignon-laya on PATH, then uvx)."
+                "description": "Command that starts the worker, e.g. [\"uv\", \"run\", \"--project\", \"/path/to/pignon/worker\", \"pignon-laya\"]. Default: found automatically (LAYA_PYTHON, a source checkout, then pignon-laya on PATH)."
               }
             },
             "additionalProperties": false
@@ -95,7 +129,7 @@
       },
       "minItems": 1,
       "maxItems": 4,
-      "description": "Decision models, in the order to try them. Default: laya-local when its worker is installed, else jev when TYPESAFE_API_KEY is set."
+      "description": "Decision models, in the order to try them. Default: laya-local when its experimental worker is installed, else jev when TYPESAFE_API_KEY is set. /pignon init adds laya-serve when it is running."
     },
     "strategy": {
       "type": "object",

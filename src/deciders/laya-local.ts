@@ -1,5 +1,7 @@
 /**
- * `laya-local` decider: long-lived stdio client for the local Laya worker.
+ * `laya-local` decider (experimental): long-lived stdio client for pignon's
+ * own Laya worker (`worker/`, not published). The supported way to run Laya
+ * locally is the official `laya-serve` (see `laya-serve.ts`).
  *
  * Spawns `worker/laya_worker.py`, speaks newline-delimited JSON over
  * stdin/stdout, and keeps the process (and its resident MLX model) warm across
@@ -58,9 +60,8 @@ export function resolveWorkerDir(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(candidates[0]);
 }
 
-/** The PyPI package of the worker, and the versions this extension works with. */
+/** The worker's command name, once installed from the repo's `worker/` directory. */
 export const WORKER_PACKAGE = "pignon-laya";
-export const WORKER_REQUIREMENT = "pignon-laya>=0.1,<0.2";
 
 /** Worker protocol (`PROTOCOL_VERSION` in laya_worker.py) this extension speaks: 0.3.x. */
 export const SUPPORTED_PROTOCOL = { major: 0, minor: 3 } as const;
@@ -70,7 +71,7 @@ export interface WorkerLaunch {
   command: string;
   args: string[];
   cwd?: string;
-  source: "config" | "env" | "checkout" | "path" | "uvx";
+  source: "config" | "env" | "checkout" | "path";
 }
 
 /**
@@ -78,9 +79,7 @@ export interface WorkerLaunch {
  * 1. `command` from the config (e.g. a development checkout);
  * 2. LAYA_PYTHON, running `laya_worker.py` from the worker directory;
  * 3. a source checkout with its `uv sync` environment (`worker/.venv`);
- * 4. `pignon-laya` on PATH (`uv tool install pignon-laya`, or pipx);
- * 5. `uvx`, which fetches the published worker on first use and caches it
- *    outside the extension, so it survives extension updates.
+ * 4. `pignon-laya` on PATH (`uv tool install ./worker` from a checkout).
  */
 export function resolveLaunch(
   env: NodeJS.ProcessEnv = process.env,
@@ -100,11 +99,8 @@ export function resolveLaunch(
   const installed = which(WORKER_PACKAGE, env);
   if (installed) return { command: installed, args: [], source: "path" };
 
-  const uvx = which("uvx", env);
-  if (uvx) return { command: uvx, args: ["--from", WORKER_REQUIREMENT, WORKER_PACKAGE], source: "uvx" };
-
   return {
-    reason: `the Laya worker is not installed (install uv from https://docs.astral.sh/uv/, or run \`uv tool install ${WORKER_PACKAGE}\`)`,
+    reason: "the experimental Laya worker is not installed (see worker/README.md in the pignon repository)",
   };
 }
 
@@ -126,7 +122,7 @@ export function which(name: string, env: NodeJS.ProcessEnv = process.env): strin
 /** Why a worker's protocol version cannot be used, or undefined when it can. */
 export function protocolProblem(version: unknown): string | undefined {
   const needed = `${SUPPORTED_PROTOCOL.major}.${SUPPORTED_PROTOCOL.minor}.x`;
-  const upgradeWorker = `upgrade it (\`uv tool upgrade ${WORKER_PACKAGE}\`, or \`uv sync\` in a checkout)`;
+  const upgradeWorker = "update it (`uv sync` in worker/, or `uv tool install --force ./worker`)";
   if (typeof version !== "string") return `the Laya worker is too old (no protocol version, pignon needs ${needed}); ${upgradeWorker}`;
   const [major, minor] = version.split(".").map(Number);
   if (major === undefined || minor === undefined || Number.isNaN(major) || Number.isNaN(minor)) {
@@ -190,8 +186,8 @@ const ENV_NAMES = new Set([
   "CURL_CA_BUNDLE",
 ]);
 
-/** Prefixes for the worker's own settings, Hugging Face Hub, MLX, locale and uv (for `uvx`). */
-const ENV_PREFIXES = ["LAYA_", "HF_", "HUGGINGFACE_", "MLX_", "LC_", "UV_"];
+/** Prefixes for the worker's own settings, Hugging Face Hub, MLX and locale. */
+const ENV_PREFIXES = ["LAYA_", "HF_", "HUGGINGFACE_", "MLX_", "LC_"];
 
 /**
  * Environment passed to the worker.
@@ -290,9 +286,6 @@ export interface LayaWorkerOptions {
  */
 const DEFAULT_STARTUP_TIMEOUT_MS = 300_000;
 
-/** Startup limit when the worker is fetched by uvx on first use. */
-const UVX_STARTUP_TIMEOUT_MS = 900_000;
-
 /** How long `stop()` waits after SIGTERM before sending SIGKILL. */
 const STOP_GRACE_MS = 500;
 
@@ -352,9 +345,7 @@ export class LayaWorker implements Decider {
     this.cwd = options.cwd ?? launch.cwd;
     this.env = { ...workerEnv(), ...options.env };
     this.timeoutMs = options.timeoutMs ?? DEFAULT_THRESHOLDS.layaTimeoutMs;
-    // uvx installs the worker (and MLX) on first use, before the model download.
-    this.startupTimeoutMs =
-      options.startupTimeoutMs ?? (launch.source === "uvx" ? UVX_STARTUP_TIMEOUT_MS : DEFAULT_STARTUP_TIMEOUT_MS);
+    this.startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     this.spawnFn = options.spawnFn ?? spawn;
   }
 

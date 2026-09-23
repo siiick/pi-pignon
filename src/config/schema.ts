@@ -105,15 +105,36 @@ const timeoutMs = (description: string) => Type.Optional(Type.Number({ exclusive
 
 export const LayaLocalDeciderSchema = Type.Object(
   {
-    type: Type.Literal("laya-local", { description: "The local Laya model (Apple Silicon, laya-mlx)." }),
+    type: Type.Literal("laya-local", {
+      description: "Experimental: pignon's own Laya worker (Apple Silicon, laya-mlx), installed from the repository's worker/ directory.",
+    }),
     timeoutMs: timeoutMs("Timeout for one decision, in milliseconds. Default: thresholds.layaTimeoutMs."),
     command: Type.Optional(
       Type.Array(Type.String({ minLength: 1 }), {
         minItems: 1,
         description:
-          "Command that starts the worker, e.g. [\"uv\", \"run\", \"--project\", \"/path/to/pignon/worker\", \"pignon-laya\"]. Default: found automatically (checkout, pignon-laya on PATH, then uvx).",
+          "Command that starts the worker, e.g. [\"uv\", \"run\", \"--project\", \"/path/to/pignon/worker\", \"pignon-laya\"]. Default: found automatically (LAYA_PYTHON, a source checkout, then pignon-laya on PATH).",
       }),
     ),
+  },
+  { additionalProperties: false },
+);
+
+export const LayaServeDeciderSchema = Type.Object(
+  {
+    type: Type.Literal("laya-serve", {
+      description: "A Laya model served by the official laya-serve (`pip install \"laya[serve]\"`). Runs on your machine unless url points elsewhere.",
+    }),
+    url: Type.Optional(
+      Type.String({ pattern: "^https?://", description: "Server root. Default: http://127.0.0.1:8000 (laya-serve's default port)." }),
+    ),
+    model: Type.Optional(
+      Type.String({ minLength: 1, description: "Laya checkpoint: `english`, `multilingual` or `typed-decisions`. Default: chosen by the server from the prompt's language." }),
+    ),
+    apiKeyEnv: Type.Optional(
+      Type.String({ minLength: 1, description: "Environment variable holding the server's key, when it was started with LAYA_API_KEY. Default: no key." }),
+    ),
+    timeoutMs: timeoutMs("Timeout for one decision, in milliseconds. Default: 1500."),
   },
   { additionalProperties: false },
 );
@@ -134,12 +155,17 @@ export const JevDeciderSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const DECIDER_SCHEMAS = { "laya-local": LayaLocalDeciderSchema, jev: JevDeciderSchema } as const;
+export const DECIDER_SCHEMAS = {
+  "laya-serve": LayaServeDeciderSchema,
+  "laya-local": LayaLocalDeciderSchema,
+  jev: JevDeciderSchema,
+} as const;
 
-export const DecidersSchema = Type.Array(Type.Union([LayaLocalDeciderSchema, JevDeciderSchema]), {
+export const DecidersSchema = Type.Array(Type.Union([LayaServeDeciderSchema, LayaLocalDeciderSchema, JevDeciderSchema]), {
   minItems: 1,
   maxItems: 4,
-  description: "Decision models, in the order to try them. Default: laya-local when its worker is installed, else jev when TYPESAFE_API_KEY is set.",
+  description:
+    "Decision models, in the order to try them. Default: laya-local when its experimental worker is installed, else jev when TYPESAFE_API_KEY is set. /pignon init adds laya-serve when it is running.",
 });
 
 export const StrategySchema = Type.Object(

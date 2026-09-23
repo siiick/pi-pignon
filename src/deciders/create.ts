@@ -1,14 +1,17 @@
 /**
  * Build the decider described by the config.
  *
- * With no `deciders` section, pignon picks one: the local Laya worker when it
- * can run here, else Jev when its API key is set. When neither is possible it
+ * With no `deciders` section, pignon picks one: the experimental Laya worker
+ * when it is installed, else Jev when its API key is set. laya-serve is never
+ * picked here, since that would need a network probe at startup; `/pignon init`
+ * probes for it and writes it into the config. When neither is possible it
  * returns an `UnavailableDecider` whose warmup error says what to install.
  */
 
 import type { DeciderSpec, RouterConfig } from "../types.js";
 import { DEFAULT_API_KEY_ENV, JevDecider } from "./jev.js";
 import { LayaWorker, layaRuntimeStatus } from "./laya-local.js";
+import { createLayaServeDecider } from "./laya-serve.js";
 import { parseDecision } from "./parse.js";
 import { StrategyDecider } from "./strategy.js";
 import { type Decider, type DeciderResult, DeciderError } from "./types.js";
@@ -38,7 +41,9 @@ export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}
       specs = [{ type: "jev" }];
     } else {
       return {
-        decider: new UnavailableDecider(`no decider available: ${laya.reason}, and ${DEFAULT_API_KEY_ENV} is not set for Jev`),
+        decider: new UnavailableDecider(
+          `no decider configured: start laya-serve (see pignon's README) and run /pignon init, or set ${DEFAULT_API_KEY_ENV} for Jev`,
+        ),
         notes,
       };
     }
@@ -54,6 +59,8 @@ export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}
 
 function build(spec: DeciderSpec, config: RouterConfig, env: NodeJS.ProcessEnv): Decider {
   switch (spec.type) {
+    case "laya-serve":
+      return createLayaServeDecider(spec, env);
     case "laya-local":
       return new LayaWorker({
         timeoutMs: spec.timeoutMs ?? config.thresholds.layaTimeoutMs,

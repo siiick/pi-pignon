@@ -30,7 +30,7 @@ describe("createDecider without a deciders section", () => {
     expect(decider).toBeInstanceOf(UnavailableDecider);
     expect(decider.isReady).toBe(false);
     await expect(decider.warmup()).rejects.toThrow(
-      "no decider available: the Laya worker is not installed, and TYPESAFE_API_KEY is not set for Jev",
+      "no decider configured: start laya-serve (see pignon's README) and run /pignon init, or set TYPESAFE_API_KEY for Jev",
     );
   });
 });
@@ -43,6 +43,27 @@ describe("createDecider with a deciders section", () => {
 
     expect(decider).toBeInstanceOf(JevDecider);
     expect(decider.model).toBe("jev-1.13.0");
+  });
+
+  it("builds a laya-serve decider, local and ready without a key", () => {
+    const config = { ...DEFAULT_CONFIG, deciders: [{ type: "laya-serve" as const, url: "http://127.0.0.1:8123" }] };
+
+    const { decider } = createDecider(config, { env: { TYPESAFE_API_KEY: "k" }, layaStatus: layaMissing });
+
+    expect(decider).toBeInstanceOf(JevDecider);
+    expect(decider).toMatchObject({ id: "laya-serve", remote: false, isReady: true });
+  });
+
+  it("can compare laya-serve with Jev", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      deciders: [{ type: "laya-serve" as const }, { type: "jev" as const }],
+      strategy: { ...DEFAULT_CONFIG.strategy, mode: "parallel" as const },
+    };
+
+    const { decider } = createDecider(config, { env: { TYPESAFE_API_KEY: "k" }, layaStatus: layaMissing });
+
+    expect(decider.id).toBe("parallel(laya-serve,jev)");
   });
 
   it("combines several deciders with the configured strategy", () => {
@@ -79,7 +100,7 @@ describe("layaRuntimeStatus", () => {
       const status = layaRuntimeStatus({ LAYA_WORKER_DIR: dir, PATH: dir }, "darwin", "arm64");
       expect(status).toEqual({
         ok: false,
-        reason: "the Laya worker is not installed (install uv from https://docs.astral.sh/uv/, or run `uv tool install pignon-laya`)",
+        reason: "the experimental Laya worker is not installed (see worker/README.md in the pignon repository)",
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });

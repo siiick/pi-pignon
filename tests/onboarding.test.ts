@@ -57,12 +57,22 @@ describe("init", () => {
     expect(choosePreset(registry([], []))).toBe("openrouter");
   });
 
-  it("detects the deciders that can run here", () => {
+  it("detects the deciders that can run here, local first", async () => {
     const ok = () => ({ ok: true as const });
     const missing = () => ({ ok: false as const, reason: "x" });
-    expect(detectDeciders({}, ok)).toEqual([{ type: "laya-local" }]);
-    expect(detectDeciders({ TYPESAFE_API_KEY: "k" }, missing)).toEqual([{ type: "jev" }]);
-    expect(detectDeciders({}, missing)).toEqual([]);
+    const up = async () => true;
+    const down = async () => false;
+    expect(await detectDeciders({ TYPESAFE_API_KEY: "k" }, ok, up)).toEqual([{ type: "laya-serve" }]);
+    expect(await detectDeciders({}, ok, down)).toEqual([{ type: "laya-local" }]);
+    expect(await detectDeciders({ TYPESAFE_API_KEY: "k" }, missing, down)).toEqual([{ type: "jev" }]);
+    expect(await detectDeciders({}, missing, down)).toEqual([]);
+  });
+
+  it("writes a laya-serve starter config that loads cleanly", () => {
+    const { config, errors } = parseConfig(starterConfig("openrouter", [{ type: "laya-serve" }]));
+
+    expect(errors).toEqual([]);
+    expect(config.deciders).toEqual([{ type: "laya-serve" }]);
   });
 
   it("writes a starter config that loads cleanly", () => {
@@ -172,7 +182,7 @@ describe("doctor", () => {
 
     const lines = await runDoctor(input(jev));
 
-    expect(lines).toContain("  ✗ jev (remote): jev: TYPESAFE_API_KEY is not set");
+    expect(lines).toContain("  ✗ jev (remote): TYPESAFE_API_KEY is not set");
   });
 
   it("flags models that are missing or lack credentials", async () => {

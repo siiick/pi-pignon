@@ -48,7 +48,7 @@ export function hideDeciding(ctx: ExtensionContext): void {
 const BAR_WIDTH = 10;
 
 /** Short names on the card; ☁ is added for remote deciders. */
-const DECIDER_LABELS: Record<string, string> = { "laya-local": "laya", jev: "jev" };
+const DECIDER_LABELS: Record<string, string> = { "laya-serve": "laya-serve", "laya-local": "laya", jev: "jev" };
 
 export function confidenceBar(confidence: number, theme: CardTheme): string {
   const clamped = Math.min(1, Math.max(0, confidence));

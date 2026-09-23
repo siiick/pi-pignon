@@ -176,11 +176,21 @@ describe("parseConfig: other sections", () => {
 
 describe("parseConfig: deciders", () => {
   it("reads the list in order", () => {
-    const deciders = [{ type: "laya-local", timeoutMs: 3000 }, { type: "jev", model: "jev-1.13.0", maxRetries: 1 }];
+    const deciders = [
+      { type: "laya-serve", url: "http://127.0.0.1:8000", model: "english", apiKeyEnv: "LAYA_API_KEY", timeoutMs: 1000 },
+      { type: "laya-local", timeoutMs: 3000 },
+      { type: "jev", model: "jev-1.13.0", maxRetries: 1 },
+    ];
     const { config, errors } = parseConfig({ deciders });
 
     expect(errors).toEqual([]);
     expect(config.deciders).toEqual(deciders);
+  });
+
+  it("rejects a laya-serve url without a scheme", () => {
+    const { errors } = parseConfig({ deciders: [{ type: "laya-serve", url: "127.0.0.1:8000" }] });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/^deciders\[0\]\.url/);
   });
 
   it("leaves the choice automatic when the section is absent", () => {
@@ -202,7 +212,7 @@ describe("parseConfig: deciders", () => {
     });
 
     expect(errors).toEqual([
-      "deciders[0].type: expected one of laya-local, jev",
+      "deciders[0].type: expected one of laya-serve, laya-local, jev",
       "deciders[1].timeoutMs: must be > 0",
       "deciders[3]: laya-local is already listed",
     ]);

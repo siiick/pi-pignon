@@ -8,6 +8,9 @@
  *   and never at `debug` level, which would log request bodies (prompts);
  * - retries are off by default: the SDK's timeout applies per attempt with no
  *   total budget, and a routing decision that arrives late is useless.
+ *
+ * The same client serves `laya-serve` (see `laya-serve.ts`), which speaks the
+ * Jev API; the options below let it run without a TypeSafe key.
  */
 
 import {
@@ -37,6 +40,15 @@ export const DEFAULT_JEV_TIMEOUT_MS = 1_500;
 const LOG_CAPACITY = 200;
 
 export interface JevDeciderOptions {
+  /** Decider id in logs and stats. Defaults to `jev`. */
+  id?: string;
+  /**
+   * Whether an API key is needed to be ready. When false and no key is set, a
+   * placeholder is sent, never the SDK's TYPESAFE_API_KEY fallback. Default: true.
+   */
+  requireApiKey?: boolean;
+  /** Said after "cannot reach the API" (e.g. how to start a local server). */
+  unreachableHint?: string;
   /** Environment variable that holds the API key. Defaults to TYPESAFE_API_KEY. */
   apiKeyEnv?: string;
   /** API root, e.g. `https://openrouter.ai/api` to go through OpenRouter. Defaults to the SDK's (TypeSafe). */
@@ -53,29 +65,39 @@ export interface JevDeciderOptions {
   fetch?: Fetch;
 }
 
+/** Sent when no key is needed: an explicit value keeps the SDK from reading TYPESAFE_API_KEY. */
+const NO_API_KEY = "none";
+
 export class JevDecider implements Decider {
-  readonly id = "jev";
-  readonly remote = true;
+  readonly id: string;
+  /** False when `baseURL` is this machine: the prompt does not leave it. */
+  readonly remote: boolean;
 
   private readonly options: JevDeciderOptions;
   private readonly apiKeyEnv: string;
   private readonly timeoutMs: number;
   private readonly logLines: string[] = [];
   private client?: TypeSafeClient;
+  private lastModel?: string;
   private stopped = false;
 
   constructor(options: JevDeciderOptions = {}) {
     this.options = options;
+    this.id = options.id ?? "jev";
+    this.remote = !(options.baseURL !== undefined && isLoopbackURL(options.baseURL));
     this.apiKeyEnv = options.apiKeyEnv ?? DEFAULT_API_KEY_ENV;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_JEV_TIMEOUT_MS;
   }
 
-  /** Ready as soon as an API key is available; there is nothing to load. */
+  /** Ready as soon as an API key is available (or none is needed); there is nothing to load. */
   get isReady(): boolean {
-    return !this.stopped && this.apiKey() !== undefined;
+    return !this.stopped && (this.apiKey() !== undefined || this.options.requireApiKey === false);
   }
 
+  /** The model that last answered, else the one requests will name. */
   get model(): string | undefined {
+    if (this.lastModel) return this.lastModel;
+    if (this.options.requireApiKey === false) return this.options.model;
     return this.client?.defaultModel ?? this.options.model ?? this.env().TYPESAFE_DEFAULT_MODEL ?? "jev-latest";
   }
 
@@ -98,6 +120,7 @@ export class JevDecider implements Decider {
       );
       // The API reports the price at runtime; the SDK does not declare it yet.
       const cost = (result.usage as { cost?: unknown } | undefined)?.cost;
+      this.lastModel = result.model;
       return {
         deciderId: this.id,
         model: result.model,
@@ -106,9 +129,10 @@ export class JevDecider implements Decider {
         ...(typeof cost === "number" && Number.isFinite(cost) ? { costUsd: cost } : {}),
       };
     } catch (err) {
-      const error = describeError(err, this.timeoutMs);
+      let error = describeError(err, this.timeoutMs);
+      if (err instanceof APIConnectionError && this.options.unreachableHint) error += `; ${this.options.unreachableHint}`;
       this.log(`decide failed: ${error}`);
-      throw new DeciderError(`jev: ${error}`, err);
+      throw new DeciderError(`${this.id}: ${error}`, err);
     }
   }
 
@@ -129,10 +153,10 @@ export class JevDecider implements Decider {
   }
 
   private ensureClient(): TypeSafeClient {
-    if (this.stopped) throw new DeciderError("jev: decider is stopped");
+    if (this.stopped) throw new DeciderError(`${this.id}: decider is stopped`);
     if (this.client) return this.client;
-    const apiKey = this.apiKey();
-    if (!apiKey) throw new DeciderError(`jev: ${this.apiKeyEnv} is not set`);
+    const apiKey = this.apiKey() ?? (this.options.requireApiKey === false ? NO_API_KEY : undefined);
+    if (!apiKey) throw new DeciderError(`${this.id}: ${this.apiKeyEnv} is not set`);
 
     const env = this.env();
     try {
@@ -147,7 +171,7 @@ export class JevDecider implements Decider {
         ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
       });
     } catch (err) {
-      throw new DeciderError(`jev: ${err instanceof Error ? err.message : String(err)}`, err);
+      throw new DeciderError(`${this.id}: ${err instanceof Error ? err.message : String(err)}`, err);
     }
     return this.client;
   }
@@ -161,6 +185,17 @@ export class JevDecider implements Decider {
     this.logLines.push(line);
     if (this.logLines.length > LOG_CAPACITY) this.logLines.shift();
   }
+}
+
+/** Whether a URL points at this machine. */
+export function isLoopbackURL(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return host === "localhost" || host === "[::1]" || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
 }
 
 /** Our question shapes are the Jev wire format; only the score tuple type differs. */
