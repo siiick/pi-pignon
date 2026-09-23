@@ -3,6 +3,7 @@
   "description": "Pi extension that shifts to the right model for each prompt, using a local (Laya) or remote (Jev) decision model",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "vitest run",

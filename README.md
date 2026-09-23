@@ -209,3 +209,11 @@ npm run test:watch
 - **Prompt privacy**: Session log entries (`laya-decision`) record a 16-hex-digit SHA-256 prefix and the length of each prompt, never its text.
 - **Bounded worker load**: Only the first 4 000 characters of a prompt are sent (Laya reads about 320 tokens from the start anyway). Each request carries a deadline; the worker skips requests that expired while queued, so slow requests cannot pile up behind each other.
 - **Shadow mode default**: New installs run in shadow mode so you can calibrate confidence thresholds on your own prompts before going live.
+
+## License
+
+[MIT](LICENSE) © 2026 Nicolas Chaintron
+
+Using pignon in your own project, or built something on top of it? I'd love to
+hear about it: open an issue or a discussion and tell me what you made. It is
+not required, but it helps me see what to improve.
