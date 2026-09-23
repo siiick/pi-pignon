@@ -15,11 +15,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 
-import {
-  type LayaDecisionResponse,
-  type LayaHealthResponse,
-  DEFAULT_THRESHOLDS,
-} from "../types.js";
+import { DEFAULT_THRESHOLDS } from "../config/defaults.js";
+import type { LayaDecisionResponse, LayaHealthResponse } from "../types.js";
 import {
   type Decider,
   type DeciderResult,

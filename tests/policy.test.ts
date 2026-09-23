@@ -1,22 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { decide, formOf, paybackRequests, profileFromModel } from "../src/policy.js";
-import { type Profile, type RoutingDecision, type Price, type RoutingTable, DEFAULT_THRESHOLDS, DEFAULT_TIERS } from "../src/types.js";
+import { DEFAULT_CONFIG, DEFAULT_THRESHOLDS } from "../src/config/defaults.js";
+import type { Profile, RoutingDecision, Price, RoutingTable, ThinkingLevel } from "../src/types.js";
 
-/** Table where every cell has its own model, so lateral switches are real. */
-const DISTINCT_TIERS: RoutingTable = {
-  trivial: {
-    direct: { provider: "p", modelId: "trivial-direct", thinking: "off" },
-    exploration: { provider: "p", modelId: "trivial-exploration", thinking: "off" },
-  },
-  standard: {
-    direct: { provider: "p", modelId: "standard-direct", thinking: "low" },
-    exploration: { provider: "p", modelId: "standard-exploration", thinking: "low" },
-  },
-  hard: {
-    direct: { provider: "p", modelId: "hard-direct", thinking: "high" },
-    exploration: { provider: "p", modelId: "hard-exploration", thinking: "low" },
-  },
-};
+const DEFAULT_TABLE = DEFAULT_CONFIG.table;
+
+/** A table where every cell has its own model `<tier>-<form>`, so lateral switches are real. */
+function distinctTable(ids: string[], explorationAllowed = (_id: string) => true): RoutingTable {
+  const spec = (id: string, form: string, thinking: ThinkingLevel) => ({ provider: "p", modelId: `${id}-${form}`, thinking });
+  return ids.map((id) => ({
+    id,
+    criterion: id,
+    models: { direct: spec(id, "direct", "high"), exploration: spec(id, "exploration", "low") },
+    explorationAllowed: explorationAllowed(id),
+  }));
+}
+
+const DISTINCT_TIERS = distinctTable(["trivial", "standard", "hard"], (id) => id !== "trivial");
+const withTable = (table: RoutingTable) => ({ ...DEFAULT_CONFIG, table });
 
 // ---------------------------------------------------------------------------
 // formOf
@@ -260,7 +261,7 @@ describe("decide cache guard", () => {
       decision: d,
       current: { tier: "standard", form: "direct" },
       contextTokens: 80_000,
-      config: { tiers: DISTINCT_TIERS, thresholds: DEFAULT_THRESHOLDS },
+      config: withTable(DISTINCT_TIERS),
     });
     expect(result.target).toBeNull();
     expect(result.reason).toContain("lateral blocked");
@@ -301,7 +302,7 @@ describe("decide form logic", () => {
       decision: d,
       current: { tier: "standard", form: "direct" },
       contextTokens: 0,
-      config: { tiers: DISTINCT_TIERS, thresholds: DEFAULT_THRESHOLDS },
+      config: withTable(DISTINCT_TIERS),
     });
     expect(result.target).toEqual({ tier: "standard", form: "exploration" });
     expect(result.reason).toContain("lateral"); // trivial bumped to standard, making it a lateral form switch
@@ -319,14 +320,14 @@ describe("decide form logic", () => {
       decision: d,
       current: { tier: "standard", form: "direct" },
       contextTokens: 0,
-      config: { tiers: DISTINCT_TIERS, thresholds: DEFAULT_THRESHOLDS },
+      config: withTable(DISTINCT_TIERS),
     });
     expect(result.target).toEqual({ tier: "standard", form: "exploration" });
     expect(result.reason).toContain("lateral");
   });
 
   it("does not switch between cells that share the same model", () => {
-    // DEFAULT_TIERS maps standard/direct and standard/exploration to one model.
+    // The default table maps standard/direct and standard/exploration to one model.
     const d: RoutingDecision = {
       tier: "standard",
       tierConfidence: 0.9,
@@ -367,27 +368,27 @@ describe("decide form logic", () => {
 
 describe("profileFromModel", () => {
   it("finds a known model", () => {
-    const result = profileFromModel("openrouter", "deepseek/deepseek-v4-flash-0731", DEFAULT_TIERS);
+    const result = profileFromModel("openrouter", "deepseek/deepseek-v4-flash-0731", DEFAULT_TABLE);
     expect(result).toEqual({ tier: "trivial", form: "direct" }); // first match wins
   });
 
   it("returns null for an unknown model id", () => {
-    const result = profileFromModel("openrouter", "unknown-model", DEFAULT_TIERS);
+    const result = profileFromModel("openrouter", "unknown-model", DEFAULT_TABLE);
     expect(result).toBeNull();
   });
 
   it("returns null when the model id matches but the provider does not", () => {
-    const result = profileFromModel("other-provider", "z-ai/glm-5.3", DEFAULT_TIERS);
+    const result = profileFromModel("other-provider", "z-ai/glm-5.3", DEFAULT_TABLE);
     expect(result).toBeNull();
   });
 
   it("finds hard direct model", () => {
-    const result = profileFromModel("openrouter", "z-ai/glm-5.3", DEFAULT_TIERS);
+    const result = profileFromModel("openrouter", "z-ai/glm-5.3", DEFAULT_TABLE);
     expect(result).toEqual({ tier: "hard", form: "direct" });
   });
 
   it("finds hard exploration model", () => {
-    const result = profileFromModel("openrouter", "tencent/hy4-preview", DEFAULT_TIERS);
+    const result = profileFromModel("openrouter", "tencent/hy4-preview", DEFAULT_TABLE);
     expect(result).toEqual({ tier: "hard", form: "exploration" });
   });
 });
@@ -567,11 +568,86 @@ describe("decide with custom thresholds", () => {
       current: { tier: "hard", form: "direct" },
       contextTokens: 0,
       config: {
-        tiers: DEFAULT_TIERS,
+        ...DEFAULT_CONFIG,
         thresholds: { ...DEFAULT_THRESHOLDS, minConfidenceDowngrade: 0.95 },
       },
     });
     expect(result.target).toBeNull();
     expect(result.reason).toContain("downgrade threshold");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Configurable tables
+// ---------------------------------------------------------------------------
+
+describe("decide with a configured table", () => {
+  const sure = (tier: string, needsExploration = false): RoutingDecision => ({
+    tier,
+    tierConfidence: 0.99,
+    needsExploration,
+    explorationConfidence: 0.99,
+    latencyMs: 1,
+  });
+
+  it("ranks tiers by their position in a two-tier table", () => {
+    const table = distinctTable(["easy", "pro"]);
+    const result = decide({
+      decision: sure("pro"),
+      current: { tier: "easy", form: "direct" },
+      contextTokens: 0,
+      config: withTable(table),
+    });
+    expect(result.target).toEqual({ tier: "pro", form: "direct" });
+    expect(result.reason).toContain("upgrade easy -> pro");
+  });
+
+  it("treats a jump across several tiers of a four-tier table as a downgrade", () => {
+    const table = distinctTable(["l1", "l2", "l3", "l4"]);
+    const result = decide({
+      decision: { ...sure("l1"), tierConfidence: 0.7 },
+      current: { tier: "l4", form: "direct" },
+      contextTokens: 0,
+      config: withTable(table),
+    });
+    expect(result.target).toBeNull();
+    expect(result.reason).toContain("downgrade threshold");
+  });
+
+  it("moves exploration tasks past every tier that does not allow exploration", () => {
+    const table = distinctTable(["l1", "l2", "l3", "l4"], (id) => id === "l3" || id === "l4");
+    const result = decide({
+      decision: sure("l1", true),
+      current: null,
+      contextTokens: 0,
+      config: withTable(table),
+    });
+    expect(result.target).toEqual({ tier: "l3", form: "exploration" });
+  });
+
+  it("keeps the tier when no higher tier allows exploration", () => {
+    const table = distinctTable(["a", "b"], (id) => id === "a");
+    const result = decide({
+      decision: sure("b", true),
+      current: null,
+      contextTokens: 0,
+      config: withTable(table),
+    });
+    expect(result.target).toEqual({ tier: "b", form: "exploration" });
+  });
+
+  it("ignores a decision for a tier that is not in the table", () => {
+    const result = decide({ decision: sure("legendary"), current: null, contextTokens: 0 });
+    expect(result).toEqual({ target: null, reason: "unknown tier legendary" });
+  });
+
+  it("treats a current tier that left the table like an unrouted model", () => {
+    const result = decide({
+      decision: sure("hard"),
+      current: { tier: "retired", form: "direct" },
+      contextTokens: 0,
+    });
+    expect(result.target).toEqual({ tier: "hard", form: "direct" });
+    expect(result.reason).toContain("from unrouted model");
   });
 });

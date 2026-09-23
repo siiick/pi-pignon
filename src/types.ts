@@ -1,7 +1,8 @@
 /**
- * Core type definitions for the Laya LLM Router extension.
+ * Core type definitions for pignon.
  *
- * This module contains zero runtime dependencies and is fully testable.
+ * Types and a few constants only: no runtime dependencies. Defaults live in
+ * `config/defaults.ts`.
  */
 
 // ---------------------------------------------------------------------------
@@ -87,8 +88,11 @@ export interface LayaHealthResponse {
 // Router domain types
 // ---------------------------------------------------------------------------
 
-/** How much reasoning a task demands. */
-export type Tier = "trivial" | "standard" | "hard";
+/**
+ * Id of a difficulty tier, as named in the config (`trivial`, `standard`…).
+ * Tiers are ordered by the routing table, easiest first.
+ */
+export type Tier = string;
 
 /** What form a task takes: direct (fits in head) or exploration (needs iteration). */
 export type Form = "direct" | "exploration";
@@ -103,8 +107,43 @@ export interface ModelSpec {
   thinking: ThinkingLevel;
 }
 
-/** Model routing table: one ModelSpec per tier x form cell. */
-export type RoutingTable = Readonly<Record<Tier, Readonly<Record<Form, ModelSpec>>>>;
+/** One difficulty tier and the models that serve it. */
+export interface TierSpec {
+  id: Tier;
+  /** How the decider recognizes a task of this tier. */
+  criterion: string;
+  models: Readonly<Record<Form, ModelSpec>>;
+  /**
+   * When false, a task that needs exploration never runs at this tier: it
+   * moves up to the next tier that allows exploration (the tool loop will be
+   * long, so the cheapest models are a poor fit).
+   */
+  explorationAllowed: boolean;
+}
+
+/** Tiers, easiest first. Position is rank: moving to a later tier is an upgrade. */
+export type RoutingTable = readonly TierSpec[];
+
+/** Wording of the two questions every decider is asked (see `deciders/questions.ts`). */
+export interface QuestionWording {
+  /**
+   * Label stored with each decision. Change it whenever the wording or the
+   * tier criteria change: thresholds calibrated on one wording do not carry
+   * over to another.
+   */
+  version: string;
+  tierInstructions: string;
+  explorationInstructions: string;
+  explorationCriteria: Readonly<{ yes: string; no: string }>;
+}
+
+/**
+ * Which number to route on:
+ * - `reported`: the answer's `confidence` field (Laya/Jev calibrated confidence);
+ * - `top-probability`: the probability of the chosen option, for checkpoints
+ *   whose reported confidence is uncalibrated.
+ */
+export type ConfidenceSource = "reported" | "top-probability";
 
 /** Routing profile: a cell in the tier x form matrix. */
 export interface Profile {
@@ -143,10 +182,12 @@ export interface Thresholds {
   layaTimeoutMs: number;
 }
 
-/** Full router configuration. */
+/** Full, resolved router configuration. */
 export interface RouterConfig {
-  tiers: RoutingTable;
+  table: RoutingTable;
   thresholds: Thresholds;
+  questions: QuestionWording;
+  confidenceSource: ConfidenceSource;
 }
 
 /** Routing-relevant reading of a decider's answers (see `deciders/parse.ts`). */
@@ -188,7 +229,12 @@ export type RouterMode = "shadow" | "live" | "off";
 export interface RouterLogEntry {
   ts: number;
   mode: RouterMode;
-  layaModel: string;
+  /** Model of the decider that answered. */
+  deciderModel?: string;
+  /** Same as `deciderModel`, in entries written before pignon. */
+  layaModel?: string;
+  /** `QuestionWording.version` the decision was made with. Absent in older entries. */
+  questionsVersion?: string;
   /** SHA-256 prefix of the prompt: lets you correlate entries without storing the text. */
   promptHash: string;
   promptLength: number;
@@ -217,39 +263,5 @@ export interface RouterLogEntry {
 // Configuration constants
 // ---------------------------------------------------------------------------
 
-export const TIER_ORDER: readonly Tier[] = ["trivial", "standard", "hard"];
 export const FORMS: readonly Form[] = ["direct", "exploration"];
 export const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "low", "medium", "high", "xhigh"];
-
-/** Default model routing table. */
-export const DEFAULT_TIERS: RoutingTable = {
-  trivial: {
-    direct: { provider: "openrouter", modelId: "deepseek/deepseek-v4-flash-0731", thinking: "off" },
-    exploration: { provider: "openrouter", modelId: "deepseek/deepseek-v4-flash-0731", thinking: "off" },
-  },
-  standard: {
-    direct: { provider: "openrouter", modelId: "deepseek/deepseek-v4.1-flash", thinking: "low" },
-    exploration: { provider: "openrouter", modelId: "deepseek/deepseek-v4.1-flash", thinking: "low" },
-  },
-  hard: {
-    direct: { provider: "openrouter", modelId: "z-ai/glm-5.3", thinking: "high" },
-    exploration: { provider: "openrouter", modelId: "tencent/hy4-preview", thinking: "low" },
-  },
-};
-
-/** Default thresholds. */
-export const DEFAULT_THRESHOLDS: Readonly<Thresholds> = {
-  minConfidenceDowngrade: 0.85,
-  minConfidenceUpgrade: 0.5,
-  minConfidenceForm: 0.6,
-  cacheGuardTokens: 60_000,
-  minPromptsBetweenSwitches: 2,
-  maxPaybackRequests: 3,
-  assumedOutputTokensPerRequest: 1_000,
-  layaTimeoutMs: 2_500,
-};
-
-export const DEFAULT_CONFIG: RouterConfig = {
-  tiers: DEFAULT_TIERS,
-  thresholds: DEFAULT_THRESHOLDS,
-};

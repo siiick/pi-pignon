@@ -1,19 +1,21 @@
 /**
- * Laya LLM Router — Pi agent extension.
+ * pignon — Pi agent extension.
  *
- * Routes user prompts to the best matching LLM model by asking a decider
- * (today: the local Laya System-1 model, via a stdio worker it spawns and
- * supervises) how hard each prompt is.
+ * Shifts to the right model for each prompt by asking a decider (today: the
+ * local Laya System-1 model, via a stdio worker it spawns and supervises) how
+ * hard the prompt is, then looking the answer up in the routing table.
  *
- *   /laya           -> show current mode
- *   /laya live      -> apply decisions
- *   /laya shadow    -> observe only (default)
- *   /laya off       -> stop calling the decider
- *   /laya unpin     -> re-enable routing after manual model selection
- *   /laya log       -> recent decider diagnostics
- *   /laya log clear -> hide diagnostics widget
- *   /laya-stats     -> session statistics
- *   /laya-stats clear -> hide statistics widget
+ *   /pignon                -> show current mode
+ *   /pignon live           -> apply decisions
+ *   /pignon shadow         -> observe only (default)
+ *   /pignon off            -> stop calling the decider
+ *   /pignon unpin          -> re-enable routing after manual model selection
+ *   /pignon log [clear]    -> recent decider diagnostics
+ *   /pignon config [clear] -> routing table and settings in use
+ *   /pignon config migrate -> convert a laya-router config file
+ *   /pignon-stats [clear]  -> session statistics
+ *
+ * `/laya` and `/laya-stats` remain as aliases for one release.
  *
  * This module only wires Pi to the router; the routing itself is in
  * `router.ts`, the policy in `policy.ts`, and the deciders in `deciders/`.
@@ -25,7 +27,9 @@ import type {
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 
-import { loadConfig } from "./config.js";
+import { describeConfig } from "./config/describe.js";
+import { loadConfig } from "./config/load.js";
+import { migrateConfigFile } from "./config/migrate.js";
 import { LayaWorker } from "./deciders/laya-local.js";
 import type { Decider } from "./deciders/types.js";
 import { type RouterHost, routePrompt } from "./router.js";
@@ -33,8 +37,15 @@ import { buildStatsLines } from "./stats.js";
 import type { RouterConfig, RouterLogEntry, RouterMode } from "./types.js";
 import { hideDeciding, renderDecisionCard, showDeciding } from "./ui.js";
 
-/** Decider log lines shown by `/laya log`. */
+/** Decider log lines shown by `/pignon log`. */
 const LOG_WIDGET_LINES = 30;
+
+/** Custom entry type of decision cards. */
+const ENTRY_TYPE = "pignon-decision";
+/** Entry type written by laya-router; still rendered and counted. */
+const LEGACY_ENTRY_TYPE = "laya-decision";
+
+const SUBCOMMANDS = ["shadow", "live", "off", "unpin", "log", "log clear", "config", "config clear", "config migrate"];
 
 type PiModel = Parameters<ExtensionAPI["setModel"]>[0];
 
@@ -43,7 +54,7 @@ type PiModel = Parameters<ExtensionAPI["setModel"]>[0];
 // ---------------------------------------------------------------------------
 
 function renderStatus(ctx: ExtensionContext, text: string): void {
-  if (ctx.hasUI) ctx.ui.setStatus("laya", text);
+  if (ctx.hasUI) ctx.ui.setStatus("pignon", text);
 }
 
 function notify(ctx: ExtensionContext, text: string, level: "info" | "warning" | "error" = "info"): void {
@@ -80,8 +91,10 @@ function piHost(
   };
 }
 
-function isLayaEntry(entry: SessionEntry): boolean {
-  return entry.type === "custom" && (entry as { customType?: string }).customType === "laya-decision";
+function isDecisionEntry(entry: SessionEntry): boolean {
+  if (entry.type !== "custom") return false;
+  const type = (entry as { customType?: string }).customType;
+  return type === ENTRY_TYPE || type === LEGACY_ENTRY_TYPE;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +119,8 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     let promptsSinceSwitch: number | undefined;
 
     // A small synchronous file read; the decider only starts work later.
-    const { config, source: configSource, errors: configErrors } = loadConfig();
+    const loaded = loadConfig();
+    const { config } = loaded;
 
     const decider = createDecider(config);
 
@@ -124,7 +138,8 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
 
     // --- Decision cards ---------------------------------------------------
 
-    pi.registerEntryRenderer<RouterLogEntry>("laya-decision", renderDecisionCard);
+    pi.registerEntryRenderer<RouterLogEntry>(ENTRY_TYPE, renderDecisionCard);
+    pi.registerEntryRenderer<RouterLogEntry>(LEGACY_ENTRY_TYPE, renderDecisionCard);
 
     // Routing runs in before_agent_start, before Pi posts the user message.
     // The entry is held until that message is in so its card renders below
@@ -132,7 +147,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     let pendingEntry: RouterLogEntry | undefined;
     const flushPendingEntry = () => {
       if (!pendingEntry) return;
-      pi.appendEntry("laya-decision", pendingEntry);
+      pi.appendEntry(ENTRY_TYPE, pendingEntry);
       pendingEntry = undefined;
     };
 
@@ -148,11 +163,11 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
         .warmup()
         .then(
           () => {
-            if (sessionActive) renderStatus(ctx, `laya ${mode} · ${decider.model ?? "unknown model"}`);
+            if (sessionActive) renderStatus(ctx, `pignon ${mode} · ${decider.model ?? "unknown model"}`);
           },
           (err) => {
             const msg = err instanceof Error ? err.message : String(err);
-            if (sessionActive) renderStatus(ctx, `laya ${mode} · ⚠ ${msg.slice(0, 60)} (/laya log)`);
+            if (sessionActive) renderStatus(ctx, `pignon ${mode} · ⚠ ${msg.slice(0, 60)} (/pignon log)`);
           },
         )
         .finally(() => {
@@ -164,10 +179,11 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       manualPin = false;
       promptsSinceSwitch = undefined;
       sessionActive = true;
-      if (configErrors.length > 0) {
-        notify(ctx, `laya: config problems, using defaults for:\n${configErrors.join("\n")}`, "warning");
+      if (loaded.errors.length > 0) {
+        notify(ctx, `pignon: config problems, using defaults for:\n${loaded.errors.join("\n")}`, "warning");
       }
-      renderStatus(ctx, `laya ${mode} · loading model`);
+      if (loaded.warnings.length > 0) notify(ctx, `pignon: ${loaded.warnings.join("\n")}`, "warning");
+      renderStatus(ctx, `pignon ${mode} · loading model`);
       warmUp(ctx);
     });
 
@@ -183,13 +199,13 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       flushPendingEntry();
       if (mode === "off") return;
       if (manualPin) {
-        renderStatus(ctx, "laya ⏸ pinned");
+        renderStatus(ctx, "pignon ⏸ pinned");
         return;
       }
       // Fail open while the decider loads (or reloads after a crash): route
       // nothing rather than hold the prompt.
       if (!decider.isReady) {
-        renderStatus(ctx, "laya ⏳ model loading — prompt not routed");
+        renderStatus(ctx, "pignon ⏳ model loading — prompt not routed");
         warmUp(ctx);
         return;
       }
@@ -218,73 +234,107 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     pi.on("model_select", async (event, ctx) => {
       if (event.source === "set" && !routerSwitching) {
         manualPin = true;
-        renderStatus(ctx, "laya ⏸ pinned");
+        renderStatus(ctx, "pignon ⏸ pinned");
       }
     });
 
     // --- Commands ---------------------------------------------------------
 
-    pi.registerCommand("laya", {
-      description: "Laya router mode (shadow | live | off | unpin | log)",
-      getArgumentCompletions: (prefix) =>
-        ["shadow", "live", "off", "unpin", "log", "log clear"]
-          .filter((v) => v.startsWith(prefix))
-          .map((v) => ({ value: v, label: v })),
-      handler: async (args, ctx) => {
-        const arg = args.trim();
-        if (arg === "log clear") {
-          showWidget(ctx, "laya-log", undefined);
+    const modeCommand = async (args: string, ctx: ExtensionContext) => {
+      const arg = args.trim();
+      if (arg === "log clear") {
+        showWidget(ctx, "pignon-log", undefined);
+        return;
+      }
+      if (arg === "log") {
+        const lines = decider.recentLogs.slice(-LOG_WIDGET_LINES);
+        if (lines.length === 0) {
+          notify(ctx, "pignon: no decider output yet");
           return;
         }
-        if (arg === "log") {
-          const lines = decider.recentLogs.slice(-LOG_WIDGET_LINES);
-          if (lines.length === 0) {
-            notify(ctx, "laya: no worker output yet");
-            return;
-          }
-          showWidget(ctx, "laya-log", [...lines, "(/laya log clear to hide)"]);
+        showWidget(ctx, "pignon-log", [...lines, "(/pignon log clear to hide)"]);
+        return;
+      }
+      if (arg === "config clear") {
+        showWidget(ctx, "pignon-config", undefined);
+        return;
+      }
+      if (arg === "config") {
+        showWidget(ctx, "pignon-config", describeConfig(config, loaded.source));
+        return;
+      }
+      if (arg === "config migrate") {
+        if (!loaded.legacy) {
+          notify(ctx, "pignon: config is already in the pignon format");
           return;
         }
-        if (arg === "unpin") {
-          manualPin = false;
-          notify(ctx, "laya: routing re-enabled");
-          renderStatus(ctx, `laya ${mode}`);
+        const result = migrateConfigFile();
+        if (!result.ok) {
+          notify(ctx, `pignon: ${result.message}`, "error");
           return;
         }
-        if (arg === "shadow" || arg === "live" || arg === "off") {
-          mode = arg;
-          manualPin = false;
-          notify(ctx, `laya: mode ${mode}`);
-          renderStatus(ctx, `laya ${mode}`);
-          return;
-        }
-        const pinned = manualPin ? " (model pinned manually)" : "";
-        const configNote = configSource ? ` · config ${configSource}` : "";
-        notify(ctx, `laya: mode ${mode}${pinned}${configNote}`);
-      },
+        const backup = result.backup ? ` (previous file kept as ${result.backup})` : "";
+        notify(ctx, `pignon: wrote ${result.to} from ${result.from}${backup}; /reload to use it`);
+        return;
+      }
+      if (arg === "unpin") {
+        manualPin = false;
+        notify(ctx, "pignon: routing re-enabled");
+        renderStatus(ctx, `pignon ${mode}`);
+        return;
+      }
+      if (arg === "shadow" || arg === "live" || arg === "off") {
+        mode = arg;
+        manualPin = false;
+        notify(ctx, `pignon: mode ${mode}`);
+        renderStatus(ctx, `pignon ${mode}`);
+        return;
+      }
+      const pinned = manualPin ? " (model pinned manually)" : "";
+      const configNote = loaded.source ? ` · config ${loaded.source}` : "";
+      notify(ctx, `pignon: mode ${mode}${pinned}${configNote}`);
+    };
+
+    const statsCommand = async (args: string, ctx: ExtensionContext) => {
+      if (args.trim() === "clear") {
+        showWidget(ctx, "pignon-stats", undefined);
+        return;
+      }
+
+      const rows = ctx.sessionManager
+        .getEntries()
+        .filter(isDecisionEntry)
+        .map((e) => (e as { data?: RouterLogEntry }).data)
+        .filter((d): d is RouterLogEntry => d !== undefined);
+
+      if (rows.length === 0) {
+        notify(ctx, "pignon: no decisions in this session");
+        return;
+      }
+
+      showWidget(ctx, "pignon-stats", buildStatsLines(rows, config.table));
+    };
+
+    const completions = (prefix: string) =>
+      SUBCOMMANDS.filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
+
+    pi.registerCommand("pignon", {
+      description: "pignon mode (shadow | live | off | unpin | log | config)",
+      getArgumentCompletions: completions,
+      handler: modeCommand,
     });
-
-    pi.registerCommand("laya-stats", {
+    pi.registerCommand("pignon-stats", {
       description: "Tier x form x confidence breakdown for this session",
-      handler: async (args, ctx) => {
-        if (args.trim() === "clear") {
-          showWidget(ctx, "laya-stats", undefined);
-          return;
-        }
-
-        const rows = ctx.sessionManager
-          .getEntries()
-          .filter(isLayaEntry)
-          .map((e) => (e as { data?: RouterLogEntry }).data)
-          .filter((d): d is RouterLogEntry => d !== undefined);
-
-        if (rows.length === 0) {
-          notify(ctx, "laya: no decisions in this session");
-          return;
-        }
-
-        showWidget(ctx, "laya-stats", buildStatsLines(rows));
-      },
+      handler: statsCommand,
+    });
+    pi.registerCommand("laya", {
+      description: "Alias of /pignon (deprecated)",
+      getArgumentCompletions: completions,
+      handler: modeCommand,
+    });
+    pi.registerCommand("laya-stats", {
+      description: "Alias of /pignon-stats (deprecated)",
+      handler: statsCommand,
     });
   };
 }

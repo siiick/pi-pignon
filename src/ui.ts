@@ -1,6 +1,6 @@
 /**
  * TUI pieces for the Laya LLM Router: the "deciding" spinner widget and the
- * decision card rendered in the transcript for each `laya-decision` entry.
+ * decision card rendered in the transcript for each decision entry.
  *
  * Card text is built by pure functions over a minimal theme so it can be
  * tested without a terminal.
@@ -17,21 +17,21 @@ export interface CardTheme {
   bold(text: string): string;
 }
 
-export const DECIDING_WIDGET = "laya-deciding";
+export const DECIDING_WIDGET = "pignon-deciding";
 
 // ---------------------------------------------------------------------------
 // Spinner
 // ---------------------------------------------------------------------------
 
 /** Show an animated "deciding" line above the editor until `hideDeciding`. */
-export function showDeciding(ctx: ExtensionContext, layaModel: string): void {
+export function showDeciding(ctx: ExtensionContext, deciderModel: string): void {
   if (!ctx.hasUI) return;
   ctx.ui.setWidget(DECIDING_WIDGET, (tui, theme) => {
     const loader = new Loader(
       tui,
       (s) => theme.fg("accent", s),
       (s) => theme.fg("muted", s),
-      `Laya is choosing a model… ${theme.fg("dim", `(${layaModel})`)}`,
+      `pignon is choosing a model… ${theme.fg("dim", `(${deciderModel})`)}`,
     );
     return Object.assign(loader, { dispose: () => loader.stop() });
   });
@@ -83,7 +83,7 @@ function outcome(entry: RouterLogEntry, theme: CardTheme): string {
 
 /** Lines of the decision card; the first line is the collapsed view. */
 export function decisionCardLines(entry: RouterLogEntry, expanded: boolean, theme: CardTheme): string[] {
-  const head = theme.fg("accent", theme.bold("laya"));
+  const head = theme.fg("accent", theme.bold("pignon"));
   const profile = entry.tier ? theme.bold(profileLabel(entry.tier, entry.form)) : theme.fg("muted", "no decision");
   const facts = [
     entry.tierConfidence !== null ? `p=${entry.tierConfidence.toFixed(2)}` : null,
@@ -109,12 +109,12 @@ export function decisionCardLines(entry: RouterLogEntry, expanded: boolean, them
   lines.push(`${label("current")}${current} · context ${formatTokens(entry.contextTokens)} tokens`);
   lines.push(
     `${label("run")}` +
-      theme.fg("dim", `mode ${entry.mode} · ${entry.layaModel} · prompt #${entry.promptHash} (${entry.promptLength} chars)`),
+      theme.fg("dim", `mode ${entry.mode} · ${entry.deciderModel ?? entry.layaModel ?? "?"}${entry.questionsVersion ? ` · questions ${entry.questionsVersion}` : ""} · prompt #${entry.promptHash} (${entry.promptLength} chars)`),
   );
   return lines;
 }
 
-/** Entry renderer for `laya-decision` custom entries. */
+/** Entry renderer for decision entries (`pignon-decision`, and `laya-decision` from older sessions). */
 export function renderDecisionCard(
   entry: { data?: RouterLogEntry },
   options: { expanded: boolean },

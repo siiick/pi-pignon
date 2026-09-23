@@ -217,9 +217,9 @@ The old `~/.pi/agent/extensions/jev-router` becomes redundant: its behavior equa
 
 ## Phases (each ends green on `npm run check`)
 
-1. **Seam, no behavior change.** `git init`; add the `Decider` interface; wrap `LayaWorker`;
+1. ✅ **Seam, no behavior change.** `git init`; add the `Decider` interface; wrap `LayaWorker`;
    move parsing to `parse.ts`; extract `router.ts`. Existing tests keep passing.
-2. **Configurable table.** TypeBox schema, aliases, ordered tiers, questions built from config,
+2. ✅ **Configurable table.** TypeBox schema, aliases, ordered tiers, questions built from config,
    v1 migration, dynamic tiers in policy/UI/stats.
 3. **Jev decider.** SDK adapter, error mapping, logger/retry hardening, contract + unit tests.
 4. **Strategies.** sequential + parallel, budget, `/pignon-stats compare|export`, attempts on card and log, stats

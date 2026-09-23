@@ -1,0 +1,294 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://unpkg.com/pignon/schema/config.schema.json",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number",
+      "const": 2,
+      "description": "Config format version."
+    },
+    "models": {
+      "type": "object",
+      "patternProperties": {
+        "^[A-Za-z0-9][A-Za-z0-9._-]*$": {
+          "type": "object",
+          "required": [
+            "provider",
+            "modelId",
+            "thinking"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pi provider id, e.g. `openrouter` or `anthropic`."
+            },
+            "modelId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Model id within the provider. Check with `pi --list-models`."
+            },
+            "thinking": {
+              "enum": [
+                "off",
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ],
+              "description": "Pi thinking level to set with the model. Pi clamps it to what the model supports."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "description": "Named models, referenced from `tiers`. Merged over the built-in names (fast, balanced, reasoner, agent)."
+    },
+    "tiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "criterion"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "description": "Tier name, shown on decision cards. Lowercase letters, digits, `-` and `_`."
+          },
+          "criterion": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How to recognize a task of this tier. This text is what the decision model reads."
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name of an entry in `models`."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "modelId",
+                  "thinking"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Pi provider id, e.g. `openrouter` or `anthropic`."
+                  },
+                  "modelId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Model id within the provider. Check with `pi --list-models`."
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh"
+                    ],
+                    "description": "Pi thinking level to set with the model. Pi clamps it to what the model supports."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "description": "Model for every task of this tier. Use it, or both `direct` and `exploration`."
+          },
+          "direct": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name of an entry in `models`."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "modelId",
+                  "thinking"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Pi provider id, e.g. `openrouter` or `anthropic`."
+                  },
+                  "modelId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Model id within the provider. Check with `pi --list-models`."
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh"
+                    ],
+                    "description": "Pi thinking level to set with the model. Pi clamps it to what the model supports."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "description": "Model for tasks that can be done without exploring the codebase."
+          },
+          "exploration": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name of an entry in `models`."
+              },
+              {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "modelId",
+                  "thinking"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Pi provider id, e.g. `openrouter` or `anthropic`."
+                  },
+                  "modelId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Model id within the provider. Check with `pi --list-models`."
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh"
+                    ],
+                    "description": "Pi thinking level to set with the model. Pi clamps it to what the model supports."
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "description": "Model for tasks that need to explore the codebase first."
+          },
+          "explorationAllowed": {
+            "type": "boolean",
+            "description": "Set false to send tasks that need exploration to the next tier up. Default true."
+          }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 2,
+      "maxItems": 8,
+      "description": "Difficulty tiers, easiest first. Replaces the default list as a whole."
+    },
+    "questions": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Label stored with each decision. Change it whenever you edit the wording or the tier criteria."
+        },
+        "tierInstructions": {
+          "type": "string",
+          "minLength": 1
+        },
+        "explorationInstructions": {
+          "type": "string",
+          "minLength": 1
+        },
+        "explorationCriteria": {
+          "type": "object",
+          "properties": {
+            "yes": {
+              "type": "string",
+              "minLength": 1
+            },
+            "no": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Wording of the questions sent to the decision model."
+    },
+    "confidenceSource": {
+      "enum": [
+        "reported",
+        "top-probability"
+      ],
+      "description": "`reported`: the decision model's confidence. `top-probability`: the probability of the chosen answer, for checkpoints whose confidence is uncalibrated."
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "minConfidenceDowngrade": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Confidence needed to downgrade, or to move in from a model outside the table."
+        },
+        "minConfidenceUpgrade": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Confidence needed to upgrade."
+        },
+        "minConfidenceForm": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Confidence needed to call a task direct rather than exploration."
+        },
+        "cacheGuardTokens": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Context size above which lateral switches (and downgrades, when prices are unknown) are refused."
+        },
+        "minPromptsBetweenSwitches": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Prompts to wait after a switch before the next downgrade or lateral switch."
+        },
+        "maxPaybackRequests": {
+          "type": "number",
+          "minimum": 0,
+          "description": "A downgrade must recoup its cache-miss cost within this many LLM requests."
+        },
+        "assumedOutputTokensPerRequest": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Output per request assumed when estimating what a downgrade saves."
+        },
+        "layaTimeoutMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Timeout for one decision from the local Laya worker, in milliseconds."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "title": "pignon configuration"
+}

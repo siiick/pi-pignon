@@ -53,7 +53,7 @@ function createMockContext(overrides?: {
 // Factory wiring tests
 // ---------------------------------------------------------------------------
 
-describe("layaRouterExtension factory", () => {
+describe("extension factory", () => {
   it("registers before_agent_start and model_select events", () => {
     const { pi } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
@@ -64,14 +64,14 @@ describe("layaRouterExtension factory", () => {
     expect(pi.on).toHaveBeenCalledWith("model_select", expect.any(Function));
   });
 
-  it("registers /laya and /laya-stats commands", () => {
+  it("registers /pignon and /pignon-stats, keeping /laya and /laya-stats as aliases", () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
-    expect(pi.registerCommand).toHaveBeenCalledWith("laya", expect.any(Object));
-    expect(pi.registerCommand).toHaveBeenCalledWith("laya-stats", expect.any(Object));
-    expect(commands.has("laya")).toBe(true);
-    expect(commands.has("laya-stats")).toBe(true);
+    expect(pi.registerCommand).toHaveBeenCalledWith("pignon", expect.any(Object));
+    expect(pi.registerCommand).toHaveBeenCalledWith("pignon-stats", expect.any(Object));
+    expect(commands.get("laya")!.handler).toBe(commands.get("pignon")!.handler);
+    expect(commands.get("laya-stats")!.handler).toBe(commands.get("pignon-stats")!.handler);
   });
 });
 
@@ -79,16 +79,16 @@ describe("layaRouterExtension factory", () => {
 // Command handler tests
 // ---------------------------------------------------------------------------
 
-describe("laya command", () => {
+describe("pignon command", () => {
   it("sets mode to live when called with 'live'", async () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
     const ctx = createMockContext();
-    const cmd = commands.get("laya")!;
+    const cmd = commands.get("pignon")!;
     await cmd.handler("live", ctx);
 
-    expect(ctx.ui.notify).toHaveBeenCalledWith("laya: mode live", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: mode live", "info");
   });
 
   it("sets mode to shadow when called with 'shadow'", async () => {
@@ -96,10 +96,10 @@ describe("laya command", () => {
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
     const ctx = createMockContext();
-    const cmd = commands.get("laya")!;
+    const cmd = commands.get("pignon")!;
     await cmd.handler("shadow", ctx);
 
-    expect(ctx.ui.notify).toHaveBeenCalledWith("laya: mode shadow", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: mode shadow", "info");
   });
 
   it("unpins the model when called with 'unpin'", async () => {
@@ -107,7 +107,7 @@ describe("laya command", () => {
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
     const ctx = createMockContext();
-    const cmd = commands.get("laya")!;
+    const cmd = commands.get("pignon")!;
 
     // First set to live
     await cmd.handler("live", ctx);
@@ -118,7 +118,7 @@ describe("laya command", () => {
 
     // Unpin via command
     await cmd.handler("unpin", ctx);
-    expect(ctx.ui.notify).toHaveBeenCalledWith("laya: routing re-enabled", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: routing re-enabled", "info");
   });
 
   it("reports current mode when called without argument", async () => {
@@ -126,10 +126,10 @@ describe("laya command", () => {
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
     const ctx = createMockContext();
-    const cmd = commands.get("laya")!;
+    const cmd = commands.get("pignon")!;
     await cmd.handler("", ctx);
 
-    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("laya: mode"), "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("pignon: mode"), "info");
   });
 });
 
@@ -137,16 +137,16 @@ describe("laya command", () => {
 // Stats command
 // ---------------------------------------------------------------------------
 
-describe("laya-stats command", () => {
+describe("pignon-stats command", () => {
   it("shows notification when there are no decisions", async () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
     const ctx = createMockContext();
-    const cmd = commands.get("laya-stats")!;
+    const cmd = commands.get("pignon-stats")!;
     await cmd.handler("", ctx);
 
-    expect(ctx.ui.notify).toHaveBeenCalledWith("laya: no decisions in this session", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: no decisions in this session", "info");
   });
 
   it("clears widget when called with 'clear'", async () => {
@@ -154,39 +154,33 @@ describe("laya-stats command", () => {
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
     const ctx = createMockContext();
-    const cmd = commands.get("laya-stats")!;
+    const cmd = commands.get("pignon-stats")!;
     await cmd.handler("clear", ctx);
 
-    expect(ctx.ui.setWidget).toHaveBeenCalledWith("laya-stats", undefined);
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith("pignon-stats", undefined);
   });
 
   it("renders stats widget when entries exist", async () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
+    const data = { tier: "hard", form: "direct", tierConfidence: 0.92, latencyMs: 15, applied: true };
+    // Sessions from before pignon hold "laya-decision" entries: both count.
     const mockEntries = [
-      {
-        type: "custom",
-        customType: "laya-decision",
-        data: {
-          tier: "hard",
-          form: "direct",
-          tierConfidence: 0.92,
-          latencyMs: 15,
-          applied: true,
-        },
-      },
+      { type: "custom", customType: "pignon-decision", data },
+      { type: "custom", customType: "laya-decision", data },
+      { type: "custom", customType: "something-else", data },
     ];
 
     const ctx = createMockContext();
     ctx.sessionManager.getEntries = vi.fn().mockReturnValue(mockEntries);
 
-    const cmd = commands.get("laya-stats")!;
+    const cmd = commands.get("pignon-stats")!;
     await cmd.handler("", ctx);
 
     expect(ctx.ui.setWidget).toHaveBeenCalledWith(
-      "laya-stats",
-      expect.arrayContaining([expect.stringContaining("1 decisions")]),
+      "pignon-stats",
+      expect.arrayContaining([expect.stringContaining("2 decisions")]),
     );
   });
 });
@@ -204,7 +198,7 @@ describe("model_select event", () => {
     const ctx = createMockContext();
 
     await modelSelectHandler({ source: "set" }, ctx);
-    expect(ctx.ui.setStatus).toHaveBeenCalledWith("laya", "laya ⏸ pinned");
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("pignon", "pignon ⏸ pinned");
   });
 
   it("does not pin when source is 'cycle'", async () => {
@@ -215,6 +209,6 @@ describe("model_select event", () => {
     const ctx = createMockContext();
 
     await modelSelectHandler({ source: "cycle" }, ctx);
-    expect(ctx.ui.setStatus).not.toHaveBeenCalledWith("laya", expect.stringContaining("pinned"));
+    expect(ctx.ui.setStatus).not.toHaveBeenCalledWith("pignon", expect.stringContaining("pinned"));
   });
 });

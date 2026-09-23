@@ -4,6 +4,7 @@
  * No I/O, no Pi dependencies — the only thing to unit-test.
  */
 
+import { DEFAULT_CONFIG, DEFAULT_THRESHOLDS } from "./config/defaults.js";
 import {
   type Form,
   type ModelSpec,
@@ -13,13 +14,10 @@ import {
   type Profile,
   type RoutingDecision,
   type RoutingTable,
-  TIER_ORDER,
   FORMS,
-  DEFAULT_CONFIG,
-  DEFAULT_THRESHOLDS,
 } from "./types.js";
 
-/** Derive the task form from a Laya decision. */
+/** Derive the task form from a decision. */
 export function formOf(
   decision: RoutingDecision,
   minConfidenceForm = DEFAULT_THRESHOLDS.minConfidenceForm,
@@ -43,7 +41,7 @@ export function formOf(
  */
 export function decide(input: PolicyInput): PolicyOutput {
   const { decision, current, contextTokens, promptsSinceSwitch, config = DEFAULT_CONFIG } = input;
-  const { tiers, thresholds } = config;
+  const { table, thresholds } = config;
 
   // Fail-open : no usable decision -> do nothing.
   if (!decision || decision.tier === null) {
@@ -51,27 +49,36 @@ export function decide(input: PolicyInput): PolicyOutput {
   }
 
   const form = formOf(decision, thresholds.minConfidenceForm);
-  let tier = decision.tier;
-
-  // Exploration forbids the lowest tier regardless of reasoning demand,
-  // because the tool loop will be long.
-  if (form === "exploration" && tier === "trivial") {
-    tier = "standard";
+  let rank = rankOf(table, decision.tier);
+  if (rank < 0) {
+    return { target: null, reason: `unknown tier ${decision.tier}` };
   }
 
+  // Some tiers (typically the cheapest) are too weak for the long tool loop
+  // of an exploration task, whatever its reasoning demand: move up to the
+  // first tier that takes it.
+  if (form === "exploration" && !table[rank]!.explorationAllowed) {
+    const next = table.findIndex((t, i) => i > rank && t.explorationAllowed);
+    if (next >= 0) rank = next;
+  }
+
+  const tier = table[rank]!.id;
   const target: Profile = { tier, form };
-  const targetSpec = tiers[tier][form];
+  const targetSpec = table[rank]!.models[form];
+
+  const currentRank = current ? rankOf(table, current.tier) : -1;
+  const currentSpec = currentRank >= 0 ? table[currentRank]!.models[current!.form] : undefined;
 
   // Several cells may share a model: compare what would actually run.
-  if (current && sameSpec(tiers[current.tier][current.form], targetSpec)) {
+  if (currentSpec && sameSpec(currentSpec, targetSpec)) {
     return { target: null, reason: "already on target model" };
   }
 
-  const move = !current
+  const move = currentRank < 0
     ? "enter"
-    : TIER_ORDER.indexOf(tier) > TIER_ORDER.indexOf(current.tier)
+    : rank > currentRank
       ? "upgrade"
-      : TIER_ORDER.indexOf(tier) < TIER_ORDER.indexOf(current.tier)
+      : rank < currentRank
         ? "downgrade"
         : "lateral";
   const label = current ? `${current.tier} -> ${tier} (${form})` : `${tier}/${form}`;
@@ -176,6 +183,16 @@ function sameSpec(a: ModelSpec, b: ModelSpec): boolean {
   return a.provider === b.provider && a.modelId === b.modelId && a.thinking === b.thinking;
 }
 
+/** Position of a tier in the table (its rank), or -1 when it is not there. */
+function rankOf(table: RoutingTable, tier: string): number {
+  return table.findIndex((t) => t.id === tier);
+}
+
+/** The model a profile runs on, or undefined when its tier is not in the table. */
+export function specOf(table: RoutingTable, profile: Profile): ModelSpec | undefined {
+  return table.find((t) => t.id === profile.tier)?.models[profile.form];
+}
+
 /**
  * Resolve a (provider, modelId) pair to a Profile by scanning the routing
  * table. When several cells share the model, the first match is returned;
@@ -184,13 +201,13 @@ function sameSpec(a: ModelSpec, b: ModelSpec): boolean {
 export function profileFromModel(
   provider: string,
   modelId: string,
-  tiers: RoutingTable,
+  table: RoutingTable,
 ): Profile | null {
-  for (const tier of TIER_ORDER) {
+  for (const tier of table) {
     for (const form of FORMS) {
-      const spec = tiers[tier][form];
+      const spec = tier.models[form];
       if (spec.provider === provider && spec.modelId === modelId) {
-        return { tier, form };
+        return { tier: tier.id, form };
       }
     }
   }

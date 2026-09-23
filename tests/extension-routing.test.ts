@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -143,12 +143,12 @@ beforeEach(() => {
 describe("live routing", () => {
   it("keeps routing after its own model switch", async () => {
     const { pi, ctx, prompt, command } = setup(GLM);
-    await command("laya", "live");
+    await command("pignon", "live");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "trivial" }));
     await prompt("rename foo to bar");
     expect(pi.setModel).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.setStatus).not.toHaveBeenCalledWith("laya", "laya ⏸ pinned");
+    expect(ctx.ui.setStatus).not.toHaveBeenCalledWith("pignon", "pignon ⏸ pinned");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "hard" }));
     await prompt("design a new caching layer");
@@ -159,7 +159,7 @@ describe("live routing", () => {
 
   it("still pins when the user selects a model manually", async () => {
     const { pi, emit, prompt, command } = setup(GLM);
-    await command("laya", "live");
+    await command("pignon", "live");
 
     await emit("model_select", { type: "model_select", model: GLM, previousModel: GLM, source: "set" });
     workerDecide.mockResolvedValueOnce(decision({ tier: "trivial" }));
@@ -171,7 +171,7 @@ describe("live routing", () => {
 
   it("routes away from a model outside the routing table", async () => {
     const { pi, ctx, prompt, command } = setup({ provider: "anthropic", id: "claude-opus-5-5" });
-    await command("laya", "live");
+    await command("pignon", "live");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "standard" }));
     await prompt("add a unit test for parseDecision");
@@ -182,7 +182,7 @@ describe("live routing", () => {
 
   it("does not re-select a model shared by the current and target cells", async () => {
     const { pi, prompt, command } = setup({ provider: "openrouter", id: "deepseek/deepseek-v4.1-flash" });
-    await command("laya", "live");
+    await command("pignon", "live");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "standard", needsExploration: true }));
     await prompt("find where the cache is invalidated");
@@ -204,56 +204,56 @@ describe("worker not ready", () => {
     workerState.ready = false;
     workerWarmup.mockReturnValue(new Promise(() => {}));
     const { pi, ctx, prompt, command } = setup(GLM);
-    await command("laya", "live");
+    await command("pignon", "live");
 
     await prompt("rename foo to bar");
 
     expect(workerDecide).not.toHaveBeenCalled();
     expect(pi.setModel).not.toHaveBeenCalled();
     expect(workerWarmup).toHaveBeenCalledTimes(1);
-    expect(ctx.ui.setStatus).toHaveBeenCalledWith("laya", expect.stringContaining("not routed"));
+    expect(ctx.ui.setStatus).toHaveBeenCalledWith("pignon", expect.stringContaining("not routed"));
 
     await prompt("another prompt while still loading");
     expect(workerWarmup).toHaveBeenCalledTimes(1); // one load in flight, not one per prompt
   });
 });
 
-describe("/laya log", () => {
+describe("/pignon log", () => {
   it("shows the most recent worker output in a widget", async () => {
     workerState.logs = Array.from({ length: 40 }, (_, i) => `line ${i}`);
     const { ctx, command } = setup(GLM);
 
-    await command("laya", "log");
+    await command("pignon", "log");
 
     const [name, lines] = ctx.ui.setWidget.mock.calls[0] as [string, string[]];
-    expect(name).toBe("laya-log");
+    expect(name).toBe("pignon-log");
     expect(lines[0]).toBe("line 10");
     expect(lines).toContain("line 39");
-    expect(lines.at(-1)).toContain("/laya log clear");
+    expect(lines.at(-1)).toContain("/pignon log clear");
   });
 
   it("says so when the worker has not written anything", async () => {
     const { ctx, command } = setup(GLM);
 
-    await command("laya", "log");
+    await command("pignon", "log");
 
-    expect(ctx.ui.notify).toHaveBeenCalledWith("laya: no worker output yet", "info");
+    expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: no decider output yet", "info");
     expect(ctx.ui.setWidget).not.toHaveBeenCalled();
   });
 
   it("hides the widget with 'log clear'", async () => {
     const { ctx, command } = setup(GLM);
 
-    await command("laya", "log clear");
+    await command("pignon", "log clear");
 
-    expect(ctx.ui.setWidget).toHaveBeenCalledWith("laya-log", undefined);
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith("pignon-log", undefined);
   });
 });
 
 describe("prompt handling", () => {
   it("sends at most 4000 characters to Laya", async () => {
     const { prompt, command } = setup(GLM);
-    await command("laya", "shadow");
+    await command("pignon", "shadow");
     workerDecide.mockResolvedValueOnce(decision({}));
 
     await prompt("x".repeat(50_000));
@@ -289,7 +289,7 @@ describe("prompt handling", () => {
 describe("switch policy in the extension", () => {
   it("waits before the next downgrade after a switch", async () => {
     const { pi, prompt, command, lastEntry } = setup({ provider: "openrouter", id: "tencent/hy4-preview" });
-    await command("laya", "live");
+    await command("pignon", "live");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "hard" })); // lateral to hard/direct
     await prompt("now implement it");
@@ -313,7 +313,7 @@ describe("switch policy in the extension", () => {
         "deepseek/deepseek-v4-flash-0731": { input: 0.1, output: 0.4, cacheRead: 0.02, cacheWrite: 0 },
       },
     });
-    await command("laya", "live");
+    await command("pignon", "live");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "trivial" }));
     await prompt("rename foo");
@@ -324,7 +324,7 @@ describe("switch policy in the extension", () => {
 
   it("falls back to the flat context guard when prices are unknown", async () => {
     const { pi, prompt, command, lastEntry } = setup(GLM, { contextTokens: 100_000 });
-    await command("laya", "live");
+    await command("pignon", "live");
 
     workerDecide.mockResolvedValueOnce(decision({ tier: "trivial" }));
     await prompt("rename foo");
@@ -335,24 +335,32 @@ describe("switch policy in the extension", () => {
 });
 
 describe("config file", () => {
-  const withConfig = (contents: string, run: () => Promise<void>) => async () => {
-    const dir = mkdtempSync(join(tmpdir(), "laya-ext-"));
-    const previous = process.env.LAYA_ROUTER_CONFIG;
-    process.env.LAYA_ROUTER_CONFIG = join(dir, "laya-router.json");
-    writeFileSync(process.env.LAYA_ROUTER_CONFIG, contents);
-    try {
-      await run();
-    } finally {
-      process.env.LAYA_ROUTER_CONFIG = previous;
-      rmSync(dir, { recursive: true, force: true });
-    }
-  };
+  /** Run with PIGNON_CONFIG / LAYA_ROUTER_CONFIG pointing into a temp dir holding the given files. */
+  const withFiles =
+    (files: { pignon?: string; legacy?: string }, run: (paths: { pignon: string; legacy: string }) => Promise<void>) =>
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "pignon-ext-"));
+      const paths = { pignon: join(dir, "pignon.json"), legacy: join(dir, "laya-router.json") };
+      const previous = { pignon: process.env.PIGNON_CONFIG, legacy: process.env.LAYA_ROUTER_CONFIG };
+      process.env.PIGNON_CONFIG = paths.pignon;
+      process.env.LAYA_ROUTER_CONFIG = paths.legacy;
+      if (files.pignon !== undefined) writeFileSync(paths.pignon, files.pignon);
+      if (files.legacy !== undefined) writeFileSync(paths.legacy, files.legacy);
+      try {
+        await run(paths);
+      } finally {
+        process.env.PIGNON_CONFIG = previous.pignon;
+        process.env.LAYA_ROUTER_CONFIG = previous.legacy;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+  const withConfig = (contents: string, run: () => Promise<void>) => withFiles({ pignon: contents }, run);
 
   it(
     "applies thresholds from the config file",
     withConfig(JSON.stringify({ thresholds: { minConfidenceDowngrade: 0.99 } }), async () => {
       const { pi, prompt, command, lastEntry } = setup(GLM);
-      await command("laya", "live");
+      await command("pignon", "live");
 
       workerDecide.mockResolvedValueOnce(decision({ tier: "trivial", tierConfidence: 0.95 }));
       await prompt("rename foo");
@@ -372,12 +380,77 @@ describe("config file", () => {
       expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("thresholds.typo: unknown setting"), "warning");
     }),
   );
+
+  it(
+    "routes to a user-defined tier",
+    withConfig(
+      JSON.stringify({
+        tiers: [
+          { id: "easy", criterion: "Easy", model: "fast" },
+          { id: "pro", criterion: "Hard", model: { provider: "anthropic", modelId: "claude-opus-5-5", thinking: "high" } },
+        ],
+      }),
+      async () => {
+        const { pi, ctx, prompt, command } = setup(GLM);
+        await command("pignon", "live");
+
+        workerDecide.mockResolvedValueOnce(decision({ tier: "pro" }));
+        await prompt("design the new storage layer");
+
+        const request = workerDecide.mock.calls[0]![0];
+        expect(Object.keys((request.questions.reasoning_demand as { criteria: object }).criteria)).toEqual(["easy", "pro"]);
+        expect(pi.setModel).toHaveBeenCalledTimes(1);
+        expect(ctx.model).toMatchObject({ provider: "anthropic", id: "claude-opus-5-5" });
+        expect(pi.setThinkingLevel).toHaveBeenCalledWith("high");
+      },
+    ),
+  );
+
+  it(
+    "shows the table in use with /pignon config",
+    withConfig(JSON.stringify({ questions: { version: "q9" } }), async () => {
+      const { ctx, command } = setup(GLM);
+
+      await command("pignon", "config");
+
+      const [name, lines] = ctx.ui.setWidget.mock.calls[0] as [string, string[]];
+      expect(name).toBe("pignon-config");
+      expect(lines[0]).toContain("pignon.json");
+      expect(lines).toContain("  questions q9 · confidence reported");
+    }),
+  );
+
+  it(
+    "reads a laya-router file, warns, and migrates it on request",
+    withFiles({ legacy: JSON.stringify({ tiers: { hard: { direct: { provider: "p", modelId: "m", thinking: "high" } } } }) }, async (paths) => {
+      const { ctx, emit, command } = setup(GLM);
+
+      await emit("session_start", { type: "session_start" });
+      expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("/pignon config migrate"), "warning");
+
+      await command("pignon", "config migrate");
+
+      expect(ctx.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining(`wrote ${paths.pignon}`), "info");
+      expect(JSON.parse(readFileSync(paths.pignon, "utf8"))).toMatchObject({ version: 2 });
+    }),
+  );
+
+  it(
+    "does not migrate a config already in the pignon format",
+    withConfig(JSON.stringify({ version: 2 }), async () => {
+      const { ctx, command } = setup(GLM);
+
+      await command("pignon", "config migrate");
+
+      expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: config is already in the pignon format", "info");
+    }),
+  );
 });
 
 describe("decision cards", () => {
   it("registers a renderer for decision entries", () => {
     const { pi } = setup(GLM);
-    expect(pi.registerEntryRenderer).toHaveBeenCalledWith("laya-decision", expect.any(Function));
+    expect(pi.registerEntryRenderer).toHaveBeenCalledWith("pignon-decision", expect.any(Function));
   });
 
   it("appends the entry only once the user message is posted", async () => {
@@ -397,7 +470,7 @@ describe("decision cards", () => {
 
   it("records the current and target models", async () => {
     const { command, prompt, lastEntry } = setup(GLM);
-    await command("laya", "live");
+    await command("pignon", "live");
     workerDecide.mockResolvedValueOnce(decision({ tier: "trivial" }));
 
     await prompt("rename foo to bar");
@@ -420,8 +493,8 @@ describe("decision cards", () => {
 
     await prompt("hello");
 
-    expect(widgetDuringDecide).toEqual(["laya-deciding", expect.any(Function)]);
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("laya-deciding", undefined);
+    expect(widgetDuringDecide).toEqual(["pignon-deciding", expect.any(Function)]);
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pignon-deciding", undefined);
   });
 
   it("removes the spinner when Laya fails", async () => {
@@ -430,7 +503,7 @@ describe("decision cards", () => {
 
     await prompt("hello");
 
-    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("laya-deciding", undefined);
+    expect(ctx.ui.setWidget).toHaveBeenLastCalledWith("pignon-deciding", undefined);
   });
 });
 
@@ -439,8 +512,8 @@ describe("without a UI", () => {
     const { ctx, prompt, command } = setup(GLM, { hasUI: false });
     workerDecide.mockResolvedValueOnce(decision({}));
 
-    await command("laya", "live");
-    await command("laya", "log");
+    await command("pignon", "live");
+    await command("pignon", "log");
     await command("laya-stats", "");
     await prompt("hello");
 

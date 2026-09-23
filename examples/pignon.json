@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/pignon/schema/config.schema.json",
+  "version": 2,
+  "models": {
+    "opus": { "provider": "anthropic", "modelId": "claude-opus-5-5", "thinking": "high" },
+    "reasoner": { "provider": "openrouter", "modelId": "z-ai/glm-5.3", "thinking": "xhigh" }
+  },
+  "tiers": [
+    {
+      "id": "trivial",
+      "criterion": "Mechanical edit, rename, formatting, or a single factual lookup",
+      "model": "fast",
+      "explorationAllowed": false
+    },
+    {
+      "id": "standard",
+      "criterion": "Localized change across a few files with clear intent",
+      "model": "balanced"
+    },
+    {
+      "id": "hard",
+      "criterion": "Multi-step investigation, debugging with unclear cause, or cross-cutting design",
+      "direct": "reasoner",
+      "exploration": "agent"
+    },
+    {
+      "id": "research",
+      "criterion": "Open-ended design or research spanning the whole system, with no clear starting point",
+      "model": "opus"
+    }
+  ],
+  "questions": { "version": "q1-research" },
+  "confidenceSource": "reported",
+  "thresholds": { "minConfidenceDowngrade": 0.9 }
+}

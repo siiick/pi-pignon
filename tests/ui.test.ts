@@ -8,7 +8,7 @@ const theme: CardTheme = { fg: (_color, text) => text, bold: (text) => text };
 const entry = (overrides: Partial<RouterLogEntry> = {}): RouterLogEntry => ({
   ts: 0,
   mode: "live",
-  layaModel: "laya-small",
+  deciderModel: "laya-small",
   promptHash: "abcd1234abcd1234",
   promptLength: 42,
   tier: "hard",
@@ -34,7 +34,7 @@ describe("decisionCardLines", () => {
   it("summarises a switch in two collapsed lines", () => {
     const lines = decisionCardLines(entry(), false, theme);
     expect(lines).toEqual([
-      "laya hard/exploration p=0.92 · 143 ms  ⚡ switched to openrouter/tencent/hy4-preview · thinking low",
+      "pignon hard/exploration p=0.92 · 143 ms  ⚡ switched to openrouter/tencent/hy4-preview · thinking low",
       "  upgrade",
     ]);
   });
@@ -59,7 +59,7 @@ describe("decisionCardLines", () => {
       false,
       theme,
     );
-    expect(lines).toEqual(["laya no decision  ✗ timeout"]);
+    expect(lines).toEqual(["pignon no decision  ✗ timeout"]);
   });
 
   it("adds confidence bars and context when expanded", () => {

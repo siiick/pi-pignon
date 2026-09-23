@@ -9,9 +9,9 @@
 import { createHash } from "node:crypto";
 
 import { parseDecision } from "./deciders/parse.js";
-import { ROUTING_QUESTIONS } from "./deciders/questions.js";
+import { buildQuestions } from "./deciders/questions.js";
 import type { Decider } from "./deciders/types.js";
-import { decide, formOf, profileFromModel } from "./policy.js";
+import { decide, formOf, profileFromModel, specOf } from "./policy.js";
 import type {
   PolicyOutput,
   Price,
@@ -75,26 +75,26 @@ export async function routePrompt<M extends HostModel>(
   prompt: string,
 ): Promise<RouteResult> {
   const { decider, config, mode, promptsSinceSwitch } = options;
-  const { tiers, thresholds } = config;
+  const { table, thresholds } = config;
   const model = host.model;
-  const current = model ? profileFromModel(model.provider, model.id, tiers) : null;
+  const current = model ? profileFromModel(model.provider, model.id, table) : null;
   const contextTokens = host.contextTokens;
   const currentModel = model ? `${model.provider}/${model.id}` : undefined;
-  const entryBase = { mode, tiers, currentModel, prompt, current, contextTokens, minConfidenceForm: thresholds.minConfidenceForm };
+  const entryBase = { mode, config, currentModel, prompt, current, contextTokens };
 
   try {
-    host.status("laya is deciding...");
+    host.status("pignon is deciding...");
     host.showDeciding(decider.model ?? "unknown");
     let result;
     try {
       result = await decider.decide(
-        { text: prompt.slice(0, MAX_PROMPT_CHARS), questions: ROUTING_QUESTIONS },
+        { text: prompt.slice(0, MAX_PROMPT_CHARS), questions: buildQuestions(config) },
         host.signal,
       );
     } finally {
       host.hideDeciding();
     }
-    const decision = parseDecision(result.answers, result.latencyMs);
+    const decision = parseDecision(result.answers, result.latencyMs, config);
 
     const verdict = decide({
       decision,
@@ -108,15 +108,15 @@ export async function routePrompt<M extends HostModel>(
 
     let applied = false;
     if (mode === "live" && verdict.target) {
-      const spec = tiers[verdict.target.tier][verdict.target.form];
+      const spec = specOf(table, verdict.target)!;
       const target = host.findModel(spec.provider, spec.modelId);
       if (!target) {
-        host.notify(`laya: ${spec.provider}/${spec.modelId} is not in the model registry`, "warning");
+        host.notify(`pignon: ${spec.provider}/${spec.modelId} is not in the model registry`, "warning");
       } else if (await host.switchModel(target)) {
         host.setThinkingLevel(spec.thinking);
         applied = true;
       } else {
-        host.notify(`laya: no auth for ${spec.provider}/${spec.modelId}`, "warning");
+        host.notify(`pignon: no auth for ${spec.provider}/${spec.modelId}`, "warning");
       }
     }
 
@@ -124,11 +124,11 @@ export async function routePrompt<M extends HostModel>(
 
     const badge = mode === "live" ? (applied ? "⚡" : "·") : "👁";
     const label = `${decision.tier ?? "?"}/${formOf(decision, thresholds.minConfidenceForm)} p=${decision.tierConfidence.toFixed(2)}`;
-    host.status(`laya ${badge} ${label} — ${verdict.reason}`);
+    host.status(`pignon ${badge} ${label} — ${verdict.reason}`);
     return { applied, entry };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    host.status(`laya ✗ ${error.slice(0, 80)}`);
+    host.status(`pignon ✗ ${error.slice(0, 80)}`);
     const entry = buildLogEntry({
       ...entryBase,
       deciderModel: decider.model ?? "unknown",
@@ -152,7 +152,7 @@ export function hashPrompt(prompt: string): string {
 
 interface LogEntryInput {
   mode: RouterMode;
-  tiers: RouterConfig["tiers"];
+  config: RouterConfig;
   currentModel: string | undefined;
   deciderModel: string;
   prompt: string;
@@ -162,23 +162,23 @@ interface LogEntryInput {
   verdict: PolicyOutput;
   applied: boolean;
   error?: string;
-  minConfidenceForm: number;
 }
 
 function buildLogEntry(input: LogEntryInput): RouterLogEntry {
   const { decision, current, verdict } = input;
-  const spec = verdict.target ? input.tiers[verdict.target.tier][verdict.target.form] : undefined;
+  const spec = verdict.target ? specOf(input.config.table, verdict.target) : undefined;
   return {
     ts: Date.now(),
     mode: input.mode,
-    layaModel: input.deciderModel,
+    deciderModel: input.deciderModel,
+    questionsVersion: input.config.questions.version,
     promptHash: hashPrompt(input.prompt),
     promptLength: input.prompt.length,
     tier: decision?.tier ?? null,
     tierConfidence: decision?.tierConfidence ?? null,
     needsExploration: decision?.needsExploration ?? null,
     explorationConfidence: decision?.explorationConfidence ?? null,
-    form: decision ? formOf(decision, input.minConfidenceForm) : null,
+    form: decision ? formOf(decision, input.config.thresholds.minConfidenceForm) : null,
     latencyMs: decision?.latencyMs ?? null,
     currentTier: current?.tier ?? null,
     currentForm: current?.form ?? null,
