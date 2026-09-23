@@ -64,6 +64,7 @@ const spec = (name: string): ModelSpec => DEFAULT_MODELS[name]!;
 
 /** The defaults, resolved. Kept in sync with DEFAULT_TIERS by a test. */
 export const DEFAULT_CONFIG: RouterConfig = {
+  deciders: null,
   table: [
     {
       id: "trivial",

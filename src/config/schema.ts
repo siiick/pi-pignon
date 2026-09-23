@@ -100,10 +100,45 @@ export const ConfidenceSourceSchema = Type.Enum(["reported", "top-probability"],
     "`reported`: the decision model's confidence. `top-probability`: the probability of the chosen answer, for checkpoints whose confidence is uncalibrated.",
 });
 
+const timeoutMs = (description: string) => Type.Optional(Type.Number({ exclusiveMinimum: 0, description }));
+
+export const LayaLocalDeciderSchema = Type.Object(
+  {
+    type: Type.Literal("laya-local", { description: "The local Laya model (Apple Silicon, laya-mlx)." }),
+    timeoutMs: timeoutMs("Timeout for one decision, in milliseconds. Default: thresholds.layaTimeoutMs."),
+  },
+  { additionalProperties: false },
+);
+
+export const JevDeciderSchema = Type.Object(
+  {
+    type: Type.Literal("jev", { description: "TypeSafe's hosted Jev model. Sends each routed prompt (first 4000 characters) to the API." }),
+    model: Type.Optional(Type.String({ minLength: 1, description: "Jev model to pin, e.g. `jev-1.13.0`. Default: jev-latest." })),
+    baseURL: Type.Optional(
+      Type.String({ minLength: 1, description: "API root. `https://openrouter.ai/api` goes through OpenRouter. Default: TypeSafe." }),
+    ),
+    apiKeyEnv: Type.Optional(
+      Type.String({ minLength: 1, description: "Environment variable holding the API key. Default: TYPESAFE_API_KEY." }),
+    ),
+    timeoutMs: timeoutMs("Timeout for one decision, in milliseconds. Default: 1500."),
+    maxRetries: Type.Optional(Type.Integer({ minimum: 0, maximum: 3, description: "Retries after a failed attempt. Default: 0." })),
+  },
+  { additionalProperties: false },
+);
+
+export const DECIDER_SCHEMAS = { "laya-local": LayaLocalDeciderSchema, jev: JevDeciderSchema } as const;
+
+export const DecidersSchema = Type.Array(Type.Union([LayaLocalDeciderSchema, JevDeciderSchema]), {
+  minItems: 1,
+  maxItems: 4,
+  description: "Decision models, in the order to try them. Default: laya-local when its worker is installed, else jev when TYPESAFE_API_KEY is set.",
+});
+
 export const ConfigFileSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String()),
     version: Type.Optional(Type.Literal(2, { description: "Config format version." })),
+    deciders: Type.Optional(DecidersSchema),
     models: Type.Optional(
       Type.Record(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }), ModelSpecSchema, {
         description: "Named models, referenced from `tiers`. Merged over the built-in names (fast, balanced, reasoner, agent).",

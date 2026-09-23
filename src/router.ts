@@ -80,7 +80,7 @@ export async function routePrompt<M extends HostModel>(
   const current = model ? profileFromModel(model.provider, model.id, table) : null;
   const contextTokens = host.contextTokens;
   const currentModel = model ? `${model.provider}/${model.id}` : undefined;
-  const entryBase = { mode, config, currentModel, prompt, current, contextTokens };
+  const entryBase = { mode, config, decider, currentModel, prompt, current, contextTokens };
 
   try {
     host.status("pignon is deciding...");
@@ -120,7 +120,14 @@ export async function routePrompt<M extends HostModel>(
       }
     }
 
-    const entry = buildLogEntry({ ...entryBase, deciderModel: result.model, decision, verdict, applied });
+    const entry = buildLogEntry({
+      ...entryBase,
+      deciderModel: result.model,
+      ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+      decision,
+      verdict,
+      applied,
+    });
 
     const badge = mode === "live" ? (applied ? "⚡" : "·") : "👁";
     const label = `${decision.tier ?? "?"}/${formOf(decision, thresholds.minConfidenceForm)} p=${decision.tierConfidence.toFixed(2)}`;
@@ -153,6 +160,8 @@ export function hashPrompt(prompt: string): string {
 interface LogEntryInput {
   mode: RouterMode;
   config: RouterConfig;
+  decider: Decider;
+  costUsd?: number;
   currentModel: string | undefined;
   deciderModel: string;
   prompt: string;
@@ -170,6 +179,9 @@ function buildLogEntry(input: LogEntryInput): RouterLogEntry {
   return {
     ts: Date.now(),
     mode: input.mode,
+    decider: input.decider.id,
+    remote: input.decider.remote,
+    ...(input.costUsd !== undefined ? { costUsd: input.costUsd } : {}),
     deciderModel: input.deciderModel,
     questionsVersion: input.config.questions.version,
     promptHash: hashPrompt(input.prompt),

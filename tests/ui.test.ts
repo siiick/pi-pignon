@@ -39,6 +39,16 @@ describe("decisionCardLines", () => {
     ]);
   });
 
+  it("names the decider, and marks remote ones", () => {
+    expect(decisionCardLines(entry({ decider: "laya-local", remote: false }), false, theme)[0]).toMatch(/^pignon laya hard\/exploration/);
+    expect(decisionCardLines(entry({ decider: "jev", remote: true }), false, theme)[0]).toMatch(/^pignon jev ☁ hard\/exploration/);
+  });
+
+  it("shows the decision's cost when expanded", () => {
+    const lines = decisionCardLines(entry({ decider: "jev", remote: true, costUsd: 0.00003 }), true, theme);
+    expect(lines.at(-1)).toContain("$0.000030");
+  });
+
   it("says what shadow mode would have done", () => {
     const [head] = decisionCardLines(entry({ mode: "shadow", applied: false }), false, theme);
     expect(head).toContain("👁 would switch to openrouter/tencent/hy4-preview");

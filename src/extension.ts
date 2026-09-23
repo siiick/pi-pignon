@@ -30,7 +30,7 @@ import type {
 import { describeConfig } from "./config/describe.js";
 import { loadConfig } from "./config/load.js";
 import { migrateConfigFile } from "./config/migrate.js";
-import { LayaWorker } from "./deciders/laya-local.js";
+import { createDecider as createConfiguredDecider } from "./deciders/create.js";
 import type { Decider } from "./deciders/types.js";
 import { type RouterHost, routePrompt } from "./router.js";
 import { buildStatsLines } from "./stats.js";
@@ -102,16 +102,12 @@ function isDecisionEntry(entry: SessionEntry): boolean {
 // ---------------------------------------------------------------------------
 
 export interface ExtensionOptions {
-  /** Builds the decider from the loaded config. Defaults to the local Laya worker. */
+  /** Builds the decider from the loaded config. Defaults to the one the config describes. */
   createDecider?: (config: RouterConfig) => Decider;
 }
 
-const defaultDecider = (config: RouterConfig): Decider =>
-  new LayaWorker({ timeoutMs: config.thresholds.layaTimeoutMs });
-
 /** Build the extension; tests inject their own decider. */
 export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionAPI) => void {
-  const createDecider = options.createDecider ?? defaultDecider;
 
   return (pi) => {
     let mode: RouterMode = "shadow";
@@ -122,7 +118,9 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     const loaded = loadConfig();
     const { config } = loaded;
 
-    const decider = createDecider(config);
+    const { decider, notes: deciderNotes } = options.createDecider
+      ? { decider: options.createDecider(config), notes: [] }
+      : createConfiguredDecider(config);
 
     // pi.setModel() emits model_select with source "set", exactly like a manual
     // /model choice. Flag our own switches so they do not pin the router.
@@ -182,7 +180,8 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       if (loaded.errors.length > 0) {
         notify(ctx, `pignon: config problems, using defaults for:\n${loaded.errors.join("\n")}`, "warning");
       }
-      if (loaded.warnings.length > 0) notify(ctx, `pignon: ${loaded.warnings.join("\n")}`, "warning");
+      const warnings = [...loaded.warnings, ...deciderNotes];
+      if (warnings.length > 0) notify(ctx, `pignon: ${warnings.join("\n")}`, "warning");
       renderStatus(ctx, `pignon ${mode} · loading model`);
       warmUp(ctx);
     });

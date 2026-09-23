@@ -11,6 +11,75 @@
       "const": 2,
       "description": "Config format version."
     },
+    "deciders": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "laya-local",
+                "description": "The local Laya model (Apple Silicon, laya-mlx)."
+              },
+              "timeoutMs": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Timeout for one decision, in milliseconds. Default: thresholds.layaTimeoutMs."
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "jev",
+                "description": "TypeSafe's hosted Jev model. Sends each routed prompt (first 4000 characters) to the API."
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Jev model to pin, e.g. `jev-1.13.0`. Default: jev-latest."
+              },
+              "baseURL": {
+                "type": "string",
+                "minLength": 1,
+                "description": "API root. `https://openrouter.ai/api` goes through OpenRouter. Default: TypeSafe."
+              },
+              "apiKeyEnv": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Environment variable holding the API key. Default: TYPESAFE_API_KEY."
+              },
+              "timeoutMs": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Timeout for one decision, in milliseconds. Default: 1500."
+              },
+              "maxRetries": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3,
+                "description": "Retries after a failed attempt. Default: 0."
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "Decision models, in the order to try them. Default: laya-local when its worker is installed, else jev when TYPESAFE_API_KEY is set."
+    },
     "models": {
       "type": "object",
       "patternProperties": {

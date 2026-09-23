@@ -47,6 +47,9 @@ export function hideDeciding(ctx: ExtensionContext): void {
 
 const BAR_WIDTH = 10;
 
+/** Short names on the card; ☁ is added for remote deciders. */
+const DECIDER_LABELS: Record<string, string> = { "laya-local": "laya", jev: "jev" };
+
 export function confidenceBar(confidence: number, theme: CardTheme): string {
   const clamped = Math.min(1, Math.max(0, confidence));
   const filled = Math.round(clamped * BAR_WIDTH);
@@ -83,7 +86,8 @@ function outcome(entry: RouterLogEntry, theme: CardTheme): string {
 
 /** Lines of the decision card; the first line is the collapsed view. */
 export function decisionCardLines(entry: RouterLogEntry, expanded: boolean, theme: CardTheme): string[] {
-  const head = theme.fg("accent", theme.bold("pignon"));
+  const decider = entry.decider ? ` ${DECIDER_LABELS[entry.decider] ?? entry.decider}${entry.remote ? " ☁" : ""}` : "";
+  const head = theme.fg("accent", theme.bold("pignon")) + theme.fg("muted", decider);
   const profile = entry.tier ? theme.bold(profileLabel(entry.tier, entry.form)) : theme.fg("muted", "no decision");
   const facts = [
     entry.tierConfidence !== null ? `p=${entry.tierConfidence.toFixed(2)}` : null,
@@ -109,7 +113,7 @@ export function decisionCardLines(entry: RouterLogEntry, expanded: boolean, them
   lines.push(`${label("current")}${current} · context ${formatTokens(entry.contextTokens)} tokens`);
   lines.push(
     `${label("run")}` +
-      theme.fg("dim", `mode ${entry.mode} · ${entry.deciderModel ?? entry.layaModel ?? "?"}${entry.questionsVersion ? ` · questions ${entry.questionsVersion}` : ""} · prompt #${entry.promptHash} (${entry.promptLength} chars)`),
+      theme.fg("dim", `mode ${entry.mode} · ${entry.deciderModel ?? entry.layaModel ?? "?"}${entry.questionsVersion ? ` · questions ${entry.questionsVersion}` : ""}${entry.costUsd !== undefined ? ` · $${entry.costUsd.toFixed(6)}` : ""} · prompt #${entry.promptHash} (${entry.promptLength} chars)`),
   );
   return lines;
 }

@@ -182,8 +182,29 @@ export interface Thresholds {
   layaTimeoutMs: number;
 }
 
+/** The local Laya worker (Apple Silicon). */
+export interface LayaLocalDeciderSpec {
+  type: "laya-local";
+  /** Timeout for one decision; defaults to `thresholds.layaTimeoutMs`. */
+  timeoutMs?: number;
+}
+
+/** TypeSafe's hosted Jev model. The API key is read from an environment variable, never the config. */
+export interface JevDeciderSpec {
+  type: "jev";
+  model?: string;
+  baseURL?: string;
+  apiKeyEnv?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+export type DeciderSpec = LayaLocalDeciderSpec | JevDeciderSpec;
+
 /** Full, resolved router configuration. */
 export interface RouterConfig {
+  /** Deciders in the order to try them, or null to pick one automatically. */
+  deciders: readonly DeciderSpec[] | null;
   table: RoutingTable;
   thresholds: Thresholds;
   questions: QuestionWording;
@@ -229,6 +250,12 @@ export type RouterMode = "shadow" | "live" | "off";
 export interface RouterLogEntry {
   ts: number;
   mode: RouterMode;
+  /** `Decider.id` of the decider asked. Absent in entries written before pignon. */
+  decider?: string;
+  /** Whether the prompt was sent off the machine to decide. */
+  remote?: boolean;
+  /** Price of the decision in USD, for remote deciders that report it. */
+  costUsd?: number;
   /** Model of the decider that answered. */
   deciderModel?: string;
   /** Same as `deciderModel`, in entries written before pignon. */

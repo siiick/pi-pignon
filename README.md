@@ -5,8 +5,8 @@ bike changes sprocket (*pignon*): a small **decision model** judges how hard
 the prompt is, and pignon looks the answer up in **your routing table**.
 
 - Decisions come from a **local Laya System-1 model** (~7–14 ms on Apple
-  Silicon, via laya-mlx); a remote Jev decider is on the way
-  ([plan](docs/PLAN-deciders.md))
+  Silicon, via laya-mlx) or from **TypeSafe's hosted Jev model** (~70–500 ms,
+  any platform, needs an API key)
 - You choose the models and write your own difficulty tiers
 - Strongly typed TypeScript, config checked against a published JSON Schema
 
@@ -29,7 +29,11 @@ The answers are fed into a **pure policy function** that decides:
 
 ## Installation
 
-### 1. Set up the Laya stdio worker
+pignon needs a decision model: the local Laya worker (Apple Silicon Macs), Jev
+(an API key), or both. With no `deciders` setting it uses Laya when its worker
+is installed, else Jev when `TYPESAFE_API_KEY` is set.
+
+### 1a. Local: set up the Laya stdio worker
 
 The extension spawns and supervises a single long-lived Python process
 (`worker/laya_worker.py`) that keeps the MLX model warm. There is no HTTP
@@ -43,6 +47,18 @@ uv sync
 
 This creates `worker/.venv`, which the extension uses automatically. The first
 decision loads the checkpoint (downloaded from Hugging Face on first run).
+
+### 1b. Remote: set a Jev API key
+
+Get a key from [TypeSafe](https://typesafe.ai) and export it where Pi runs:
+
+```bash
+export TYPESAFE_API_KEY="sk-..."
+```
+
+To go through OpenRouter instead, use an OpenRouter key and see
+[Deciders](#deciders). Jev receives the first 4 000 characters of each routed
+prompt; see [Privacy](#privacy).
 
 ### 2. Install the extension into Pi
 
@@ -93,9 +109,11 @@ they will be removed in a later release.
 - **After each routed prompt**: a decision card below your message, e.g.
 
   ```
-  pignon hard/exploration p=0.92 · 143 ms  ⚡ switched to openrouter/tencent/hy4-preview · thinking low
+  pignon laya hard/exploration p=0.92 · 143 ms  ⚡ switched to openrouter/tencent/hy4-preview · thinking low
     upgrade
   ```
+
+  The name after `pignon` is the decider that answered; `jev ☁` means the prompt was sent to the Jev API.
 
   `👁 would switch to …` in shadow mode, `· kept current model` when the policy holds, `✗ …` on failure. Expand tool output (`Ctrl+O`) to see confidence bars for tier and exploration, the current model, context size, the decision model and the question wording version. Cards are session entries (`pignon-decision`; `laya-decision` in older sessions), so they reappear when a session is resumed and are never sent to the LLM.
 - **Footer status**: the latest verdict at a glance.
@@ -105,6 +123,9 @@ they will be removed in a later release.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIGNON_CONFIG` | `~/.pi/agent/pignon.json` | Path of the optional [config file](#configuration) |
+| `TYPESAFE_API_KEY` | *(unset)* | Jev API key (another variable can be named with `apiKeyEnv`) |
+| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | Jev API root, when `baseURL` is not set |
+| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Jev model, when `model` is not set |
 | `LAYA_ROUTER_CONFIG` | `~/.pi/agent/laya-router.json` | Config of laya-router, read only when there is no pignon config |
 | `LAYA_MODEL` | `aac6fef/laya-mlx` | Override the model checkpoint (e.g. `aac6fef/laya-multilingual-mlx`); fixed for the life of the worker |
 | `LAYA_MODEL_REVISION` | pinned commit for the default model, latest for others | Hugging Face revision to load; empty string means latest |
@@ -124,6 +145,32 @@ invalid section is reported when the session starts and falls back to its
 default. `/pignon config` shows what is in use.
 
 Add the `$schema` line to get autocompletion and inline errors in your editor.
+
+### Deciders
+
+`deciders` picks the decision model. Without it, pignon chooses automatically
+(see [Installation](#installation)).
+
+```json
+{
+  "deciders": [
+    { "type": "jev", "model": "jev-1.13.0" }
+  ]
+}
+```
+
+| Type | Key | Default | Meaning |
+|------|-----|---------|---------|
+| `laya-local` | `timeoutMs` | `thresholds.layaTimeoutMs` | Timeout for one decision |
+| `jev` | `model` | `jev-latest` | Jev version to pin. Confidences are calibrated per version, so pinning keeps your thresholds valid |
+| | `apiKeyEnv` | `TYPESAFE_API_KEY` | Environment variable holding the key. Keys are never read from the config file |
+| | `baseURL` | TypeSafe | `https://openrouter.ai/api` to go through OpenRouter (with `"apiKeyEnv": "OPENROUTER_API_KEY"`) |
+| | `timeoutMs` | `1500` | Timeout for one decision |
+| | `maxRetries` | `0` | Retries after a failed call; each gets the full timeout |
+
+For now only the first decider in the list is used. Using the next one as a
+fallback, or running them side by side to compare them, is
+[planned](docs/PLAN-deciders.md#decision-strategies).
 
 ### Swap a model
 
@@ -216,7 +263,9 @@ pignon/
 │   │   ├── types.ts         # Decider interface: the seam between router and classifier
 │   │   ├── questions.ts     # The tier and exploration questions sent to every decider
 │   │   ├── parse.ts         # Raw answers -> RoutingDecision (shared by all deciders)
-│   │   └── laya-local.ts    # Local Laya decider: supervises the stdio worker
+│   │   ├── laya-local.ts    # Local Laya decider: supervises the stdio worker
+│   │   ├── jev.ts           # Remote Jev decider, through @typesafe-ai/sdk
+│   │   └── create.ts        # Config -> decider, with the automatic choice
 │   ├── policy.ts            # Pure routing policy (the core logic)
 │   ├── router.ts            # Per-prompt routing over a Pi-free RouterHost
 │   ├── stats.ts             # /pignon-stats histogram
@@ -228,6 +277,8 @@ pignon/
 │   ├── pyproject.toml       # uv project: laya-mlx
 │   └── README.md            # Worker protocol and manual smoke test
 ├── tests/                   # Vitest suites, one per module
+│   ├── decider-contract.test.ts # What every decider must do, run against each
+│   └── live/                # Real API calls, only with npm run test:live
 ├── schema/config.schema.json # Generated JSON Schema (npm run schema)
 ├── examples/pignon.json     # A four-tier config, loaded by the tests
 ├── docs/PLAN-deciders.md    # Roadmap: Jev decider, strategies, publishing
@@ -251,6 +302,9 @@ npm test
 # Run the Python worker tests
 npm run test:worker
 
+# One real Jev call (needs TYPESAFE_API_KEY; costs a fraction of a cent)
+npm run test:live
+
 # Regenerate schema/config.schema.json after changing src/config/schema.ts
 npm run schema
 
@@ -263,6 +317,7 @@ npm run test:watch
 
 ## Design notes
 
+- <a id="privacy"></a>**Privacy**: With `laya-local`, prompts never leave the machine. With `jev`, the first 4 000 characters of each routed prompt are sent to TypeSafe (or OpenRouter), and decision cards are marked ☁. The SDK's own logging is capped at `warn` and kept in `/pignon log`, so prompts are never logged, even with `TYPESAFE_LOG_LEVEL=debug`.
 - **Fail-open**: If the worker cannot start or a decision fails, the decision is `null` and the extension keeps the current model. The worker loads its model in the background from `session_start`; prompts sent before it is ready are not routed (status shows `model loading — prompt not routed`) rather than held. It stays warm for the session, is reloaded in the background if it crashes, and is stopped on `session_shutdown`. A worker that is not ready within 5 minutes is killed.
 - <a id="switch-cost"></a>**Switch cost**: Switching models throws away the prompt cache: the first request on the new model reads the whole context at the uncached (or cache-write) price. Upgrades are quality-driven and only gated by confidence. A downgrade, or a move in from a model outside the table, must pay that premium back within `maxPaybackRequests` LLM requests out of what it saves per request (cheaper cache reads on the context plus cheaper output). Prices come from Pi's model registry; when either model has no price, the flat `cacheGuardTokens` limit applies instead. Lateral switches (direct ↔ exploration) are about fit rather than price and use the flat limit.
 - **Hysteresis**: After the router switches, it waits `minPromptsBetweenSwitches` prompts before the next downgrade or lateral switch, so it does not flap between models. Upgrades are never delayed.

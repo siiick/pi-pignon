@@ -22,6 +22,7 @@ import type { TLocalizedValidationError } from "typebox/error";
 
 import {
   type ConfidenceSource,
+  type DeciderSpec,
   type Form,
   type ModelSpec,
   type QuestionWording,
@@ -37,6 +38,7 @@ import {
   type TierFile,
   ConfidenceSourceSchema,
   ConfigFileSchema,
+  DECIDER_SCHEMAS,
   ModelSpecSchema,
   QuestionsSchema,
   ThresholdsSchema,
@@ -134,6 +136,10 @@ const checkModelSpec = Compile(ModelSpecSchema);
 const checkTiers = Compile(TiersSchema);
 const checkQuestions = Compile(QuestionsSchema);
 const checkConfidenceSource = Compile(ConfidenceSourceSchema);
+const checkDecider = {
+  "laya-local": Compile(DECIDER_SCHEMAS["laya-local"]),
+  jev: Compile(DECIDER_SCHEMAS.jev),
+};
 
 /** Merge a parsed JSON value over the defaults, collecting validation errors. */
 export function parseConfig(raw: unknown): ParsedConfig {
@@ -148,6 +154,7 @@ export function parseConfig(raw: unknown): ParsedConfig {
   }
   if (raw.version !== undefined && raw.version !== 2) errors.push("version: expected 2");
 
+  const deciders = parseDeciders(raw.deciders, errors);
   const thresholds = parseThresholds(raw.thresholds, errors);
   const models = parseModels(raw.models, errors);
   const questions = parseQuestions(raw.questions, errors);
@@ -171,7 +178,37 @@ export function parseConfig(raw: unknown): ParsedConfig {
     table = parseTiers(raw.tiers, models, errors) ?? defaultTable;
   }
 
-  return { config: { table, thresholds, questions, confidenceSource }, errors, warnings, legacy };
+  return { config: { deciders, table, thresholds, questions, confidenceSource }, errors, warnings, legacy };
+}
+
+/**
+ * Deciders are checked one by one (by `type`, for precise messages); invalid
+ * ones are skipped. None valid means automatic choice, as with no section.
+ */
+function parseDeciders(raw: unknown, errors: string[]): DeciderSpec[] | null {
+  if (raw === undefined) return null;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    errors.push("deciders: expected a non-empty list");
+    return null;
+  }
+  if (raw.length > 4) errors.push("deciders: at most 4 deciders; the rest are ignored");
+  const deciders: DeciderSpec[] = [];
+  raw.slice(0, 4).forEach((entry, index) => {
+    const at = `deciders[${index}]`;
+    const type = isRecord(entry) ? entry.type : undefined;
+    if (type !== "laya-local" && type !== "jev") {
+      errors.push(`${at}.type: expected one of laya-local, jev`);
+    } else if (isRecord(entry) && "apiKey" in entry) {
+      errors.push(`${at}.apiKey: keep secrets out of the config file; name the environment variable with apiKeyEnv`);
+    } else if (!checkDecider[type].Check(entry)) {
+      errors.push(...formatErrors(at, checkDecider[type].Errors(entry)));
+    } else if (deciders.some((d) => d.type === type)) {
+      errors.push(`${at}: ${type} is already listed`);
+    } else {
+      deciders.push({ ...(entry as DeciderSpec) });
+    }
+  });
+  return deciders.length > 0 ? deciders : null;
 }
 
 function parseThresholds(raw: unknown, errors: string[]): Thresholds {

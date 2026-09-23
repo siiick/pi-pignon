@@ -20,6 +20,8 @@ export function buildStatsLines(rows: RouterLogEntry[], table: RoutingTable = DE
 
   let applied = 0;
   const latencies: number[] = [];
+  const byDecider = new Map<string, number>();
+  let cost = 0;
 
   for (const row of rows) {
     const cell = row.tier && row.form ? `${row.tier}/${row.form}` : null;
@@ -27,6 +29,8 @@ export function buildStatsLines(rows: RouterLogEntry[], table: RoutingTable = DE
     // Failed decisions have no latency; counting them as 0 ms skews the mean.
     if (typeof row.latencyMs === "number") latencies.push(row.latencyMs);
     if (row.applied) applied++;
+    if (row.decider) byDecider.set(row.decider, (byDecider.get(row.decider) ?? 0) + 1);
+    cost += row.costUsd ?? 0;
   }
 
   const avgLatency = latencies.length
@@ -41,6 +45,12 @@ export function buildStatsLines(rows: RouterLogEntry[], table: RoutingTable = DE
         `${cell.padEnd(22)}${counts.map((n) => String(n).padStart(9)).join("")}`,
     ),
     `avg latency ${avgLatency}`,
+    ...(byDecider.size > 0
+      ? [
+          `deciders ${[...byDecider].map(([id, n]) => `${id} ${n}`).join(" · ")}` +
+            (cost > 0 ? ` · cost $${cost.toFixed(5)}` : ""),
+        ]
+      : []),
     `(/pignon-stats clear to hide)`,
   ];
 }

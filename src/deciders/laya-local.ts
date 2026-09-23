@@ -70,6 +70,27 @@ export function resolvePython(workerDir: string, env: NodeJS.ProcessEnv = proces
   return "python3";
 }
 
+/**
+ * Whether the local worker can run here: laya-mlx needs an Apple Silicon Mac,
+ * and the worker needs a Python environment (`uv sync` in the worker dir, or
+ * LAYA_PYTHON).
+ */
+export function layaRuntimeStatus(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+): { ok: true } | { ok: false; reason: string } {
+  if (platform !== "darwin" || arch !== "arm64") {
+    return { ok: false, reason: "the local Laya model needs an Apple Silicon Mac" };
+  }
+  if (env.LAYA_PYTHON) return { ok: true };
+  const workerDir = resolveWorkerDir(env);
+  if (!existsSync(join(workerDir, ".venv", "bin", "python"))) {
+    return { ok: false, reason: `the Laya worker is not installed (run \`uv sync\` in ${workerDir})` };
+  }
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // Worker environment
 // ---------------------------------------------------------------------------

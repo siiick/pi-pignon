@@ -273,6 +273,7 @@ describe("prompt handling", () => {
     expect(entry.promptHash).toBe(hashPrompt(secret));
     expect(entry.promptHash).toMatch(/^[0-9a-f]{16}$/);
     expect(entry.promptLength).toBe(secret.length);
+    expect(entry).toMatchObject({ decider: "fake", remote: false });
     expect(JSON.stringify(entry)).not.toContain("sk-live");
   });
 
@@ -524,6 +525,13 @@ describe("without a UI", () => {
 });
 
 describe("buildStatsLines", () => {
+  it("counts decisions per decider and sums their cost", () => {
+    const row = (decider: string, costUsd?: number) =>
+      ({ decider, latencyMs: 1, applied: false, tier: null, form: null, ...(costUsd ? { costUsd } : {}) }) as RouterLogEntry;
+    const lines = buildStatsLines([row("laya-local"), row("jev", 0.00002), row("jev", 0.00003)]);
+    expect(lines).toContain("deciders laya-local 1 · jev 2 · cost $0.00005");
+  });
+
   it("averages latency over successful decisions only", () => {
     const row = (latencyMs: number | null) => ({ latencyMs, applied: false, tier: null, form: null }) as RouterLogEntry;
     const lines = buildStatsLines([row(10), row(30), row(null)]);

@@ -174,6 +174,46 @@ describe("parseConfig: other sections", () => {
   });
 });
 
+describe("parseConfig: deciders", () => {
+  it("reads the list in order", () => {
+    const deciders = [{ type: "laya-local", timeoutMs: 3000 }, { type: "jev", model: "jev-1.13.0", maxRetries: 1 }];
+    const { config, errors } = parseConfig({ deciders });
+
+    expect(errors).toEqual([]);
+    expect(config.deciders).toEqual(deciders);
+  });
+
+  it("leaves the choice automatic when the section is absent", () => {
+    expect(parseConfig({}).config.deciders).toBeNull();
+  });
+
+  it("refuses an API key in the file", () => {
+    const { config, errors } = parseConfig({ deciders: [{ type: "jev", apiKey: "sk-live" }] });
+
+    expect(errors).toEqual([
+      "deciders[0].apiKey: keep secrets out of the config file; name the environment variable with apiKeyEnv",
+    ]);
+    expect(config.deciders).toBeNull();
+  });
+
+  it("skips invalid entries and keeps the valid ones", () => {
+    const { config, errors } = parseConfig({
+      deciders: [{ type: "gpt" }, { type: "jev", timeoutMs: 0 }, { type: "laya-local" }, { type: "laya-local" }],
+    });
+
+    expect(errors).toEqual([
+      "deciders[0].type: expected one of laya-local, jev",
+      "deciders[1].timeoutMs: must be > 0",
+      "deciders[3]: laya-local is already listed",
+    ]);
+    expect(config.deciders).toEqual([{ type: "laya-local" }]);
+  });
+
+  it("rejects an empty list", () => {
+    expect(parseConfig({ deciders: [] }).errors).toEqual(["deciders: expected a non-empty list"]);
+  });
+});
+
 describe("parseConfig: laya-router (v1) tiers", () => {
   it("merges tier cells over the defaults and flags the format", () => {
     const { config, errors, warnings, legacy } = parseConfig({ tiers: { hard: { direct: OPUS } } });
