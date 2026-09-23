@@ -225,8 +225,10 @@ The old `~/.pi/agent/extensions/jev-router` becomes redundant: its behavior equa
 4. ✅ **Strategies.** sequential + parallel, budget, `/pignon-stats compare|export`, attempts on card and log, stats
    per decider (escalation rate, cost).
 5. ✅ **Onboarding.** Presets + `extends`, `/pignon init|doctor|config`, JSON Schema generation.
-6. **Publish.** ~~PyPI `pignon-laya` + uvx launcher~~ (dropped, see below) + protocol check, docs, package metadata, live test,
+6. ✅ **Publish.** ~~PyPI `pignon-laya` + uvx launcher~~ (dropped, see below) + protocol check, docs, package metadata, live test,
    `npm pack` dry-run, and a test install into a clean `~/.pi` via `pi install`/symlink. Retire `jev-router`.
+   Released as git tag `v0.1.0` (`pi install git:github.com/siiick/pignon@v0.1.0`); npm is deferred, the package
+   is ready for it (only the Pi package gallery needs npm).
 7. ✅ **laya-serve.** `laya-serve` decider over the Jev client (no key, local when on loopback), detected by
    `/pignon init`, documented as the way to run Laya locally; `laya-local` becomes experimental.
 
