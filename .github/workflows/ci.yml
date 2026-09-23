@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extension:
+    name: Extension (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pi needs Node 22.19 or later.
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Includes the check that schema/config.schema.json is up to date.
+      # Live tests (real Jev, laya-serve) are excluded unless PIGNON_LIVE is set.
+      - run: npm test
+      - name: Package contents
+        run: npm pack --dry-run
+
+  worker:
+    name: Experimental worker (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      # The tests stub the model: laya-mlx (Apple Silicon only) is not needed.
+      - run: python -m unittest -v
+        working-directory: worker

@@ -30,7 +30,7 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=20.3"
+    "node": ">=22.19"
   },
   "scripts": {
     "test": "vitest run",
