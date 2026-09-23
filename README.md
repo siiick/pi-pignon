@@ -29,28 +29,31 @@ The answers are fed into a **pure policy function** that decides:
 
 ## Installation
 
-pignon needs a decision model: the local Laya worker (Apple Silicon Macs), Jev
-(an API key), or both. With no `deciders` setting it uses Laya when its worker
-is installed, else Jev when `TYPESAFE_API_KEY` is set.
-
-### 1a. Local: set up the Laya stdio worker
-
-The extension spawns and supervises a single long-lived Python process
-(`worker/laya_worker.py`) that keeps the MLX model warm. There is no HTTP
-service, no port, and nothing to start manually — but the worker's virtual
-environment must exist once:
+### 1. Install the extension
 
 ```bash
-cd ~/projects/localLaya/pignon/worker
-uv sync
+pi install npm:pignon
 ```
 
-This creates `worker/.venv`, which the extension uses automatically. The first
-decision loads the checkpoint (downloaded from Hugging Face on first run).
+### 2. Give it a decision model
 
-### 1b. Remote: set a Jev API key
+pignon needs the local Laya model (Apple Silicon Macs), Jev (an API key), or
+both. With no `deciders` setting it uses Laya when it can run, else Jev when
+`TYPESAFE_API_KEY` is set.
 
-Get a key from [TypeSafe](https://typesafe.ai) and export it where Pi runs:
+**Local: Laya.** Install [uv](https://docs.astral.sh/uv/) (`brew install uv`).
+That's all: pignon starts the worker with `uvx`, which fetches the
+[`pignon-laya`](https://pypi.org/project/pignon-laya/) package and MLX on first
+use and downloads the model from Hugging Face (about 850 MB), then keeps it in
+uv's cache, outside Pi. The first start takes a few minutes; prompts are not
+held while it loads. To install the worker permanently instead:
+
+```bash
+uv tool install pignon-laya     # later: uv tool upgrade pignon-laya
+```
+
+**Remote: Jev.** Get a key from [TypeSafe](https://typesafe.ai) and export it
+where Pi runs:
 
 ```bash
 export TYPESAFE_API_KEY="sk-..."
@@ -59,22 +62,6 @@ export TYPESAFE_API_KEY="sk-..."
 To go through OpenRouter instead, use an OpenRouter key and see
 [Deciders](#deciders). Jev receives the first 4 000 characters of each routed
 prompt; see [Privacy](#privacy).
-
-### 2. Install the extension into Pi
-
-```bash
-cd ~/projects/localLaya/pignon
-# Symlink so Pi discovers it automatically
-ln -s $(pwd) ~/.pi/agent/extensions/pignon
-```
-
-Or copy it, without the virtual environment (its absolute paths break when
-moved), and recreate that in place:
-```bash
-rsync -a --exclude node_modules --exclude worker/.venv \
-  ~/projects/localLaya/pignon ~/.pi/agent/extensions/
-(cd ~/.pi/agent/extensions/pignon/worker && uv sync)
-```
 
 ### 3. Restart Pi
 
@@ -139,14 +126,15 @@ they will be removed in a later release.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PIGNON_CONFIG` | `~/.pi/agent/pignon.json` | Path of the optional [config file](#configuration) |
+| `PIGNON_CONFIG` | `<Pi config dir>/pignon.json` | Path of the optional [config file](#configuration) |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's config directory; pignon keeps its config and exports there |
 | `TYPESAFE_API_KEY` | *(unset)* | Jev API key (another variable can be named with `apiKeyEnv`) |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | Jev API root, when `baseURL` is not set |
 | `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Jev model, when `model` is not set |
 | `LAYA_ROUTER_CONFIG` | `~/.pi/agent/laya-router.json` | Config of laya-router, read only when there is no pignon config |
 | `LAYA_MODEL` | `aac6fef/laya-mlx` | Override the model checkpoint (e.g. `aac6fef/laya-multilingual-mlx`); fixed for the life of the worker |
 | `LAYA_MODEL_REVISION` | pinned commit for the default model, latest for others | Hugging Face revision to load; empty string means latest |
-| `LAYA_PYTHON` | `worker/.venv/bin/python`, else `python3` | Interpreter used to launch the worker |
+| `LAYA_PYTHON` | *(unset)* | Run `laya_worker.py` with this interpreter instead of finding the worker (see [Laya worker](#laya-worker)) |
 | `LAYA_WORKER_DIR` | `<extension>/worker` | Directory containing `laya_worker.py` |
 | `LAYA_WORKER_SCRIPT` | `<worker dir>/laya_worker.py` | Explicit worker script path |
 | `LAYA_DTYPE` | `float16` | Worker model dtype (`float16` / `float32`) |
@@ -218,6 +206,20 @@ matrix, mean confidence, latency, failures and cost per decider.
 `/pignon-stats export` writes every decision (with each decider's answer) as
 JSON lines for your own analysis. In parallel mode, every routed prompt is sent
 to Jev.
+
+### Laya worker
+
+pignon starts the local worker with the first of:
+
+1. `command` in the `laya-local` decider, e.g. `["uv", "run", "--project", "/path/to/pignon/worker", "pignon-laya"]`;
+2. `LAYA_PYTHON`, running `laya_worker.py` from `LAYA_WORKER_DIR`;
+3. a source checkout's `worker/.venv` (after `uv sync`);
+4. `pignon-laya` on `PATH` (`uv tool install pignon-laya`);
+5. `uvx --from "pignon-laya>=0.1,<0.2" pignon-laya`.
+
+`/pignon doctor` says which one is used. The worker reports its protocol
+version when it starts; pignon refuses a worker it cannot talk to and says
+which side to upgrade.
 
 ### Swap a model
 
@@ -346,7 +348,7 @@ pignon/
 ├── worker/
 │   ├── laya_worker.py       # Long-lived laya-mlx process (JSON-lines on stdio)
 │   ├── test_laya_worker.py  # stdlib unittest tests for the worker
-│   ├── pyproject.toml       # uv project: laya-mlx
+│   ├── pyproject.toml       # PyPI package pignon-laya (command: pignon-laya)
 │   └── README.md            # Worker protocol and manual smoke test
 ├── tests/                   # Vitest suites, one per module
 │   ├── decider-contract.test.ts # What every decider must do, run against each
@@ -354,12 +356,22 @@ pignon/
 ├── schema/config.schema.json # Generated JSON Schema (npm run schema)
 ├── examples/pignon.json     # A four-tier config, loaded by the tests
 ├── docs/PLAN-deciders.md    # Roadmap: Jev decider, strategies, publishing
+├── CHANGELOG.md
 ├── package.json
 ├── tsconfig.json
 └── vitest.config.ts
 ```
 
 ## Development
+
+Work from a clone, and point Pi at it instead of the npm package:
+
+```bash
+git clone https://github.com/siiick/pignon && cd pignon
+npm install
+(cd worker && uv sync)          # the worker's environment; pignon uses it before uvx
+pi install ./                   # loads the clone in place, no copy
+```
 
 ```bash
 # Install dependencies

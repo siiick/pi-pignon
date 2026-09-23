@@ -10,8 +10,8 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { accessSync, constants, existsSync, realpathSync, statSync } from "node:fs";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 
@@ -58,16 +58,86 @@ export function resolveWorkerDir(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(candidates[0]);
 }
 
+/** The PyPI package of the worker, and the versions this extension works with. */
+export const WORKER_PACKAGE = "pignon-laya";
+export const WORKER_REQUIREMENT = "pignon-laya>=0.1,<0.2";
+
+/** Worker protocol (`PROTOCOL_VERSION` in laya_worker.py) this extension speaks: 0.3.x. */
+export const SUPPORTED_PROTOCOL = { major: 0, minor: 3 } as const;
+
+/** How to start the worker, and where that came from. */
+export interface WorkerLaunch {
+  command: string;
+  args: string[];
+  cwd?: string;
+  source: "config" | "env" | "checkout" | "path" | "uvx";
+}
+
 /**
- * Resolve the Python interpreter for the worker.
- *
- * Priority: LAYA_PYTHON -> <workerDir>/.venv -> python3 on PATH.
+ * Find the worker, in this order:
+ * 1. `command` from the config (e.g. a development checkout);
+ * 2. LAYA_PYTHON, running `laya_worker.py` from the worker directory;
+ * 3. a source checkout with its `uv sync` environment (`worker/.venv`);
+ * 4. `pignon-laya` on PATH (`uv tool install pignon-laya`, or pipx);
+ * 5. `uvx`, which fetches the published worker on first use and caches it
+ *    outside the extension, so it survives extension updates.
  */
-export function resolvePython(workerDir: string, env: NodeJS.ProcessEnv = process.env): string {
-  if (env.LAYA_PYTHON) return env.LAYA_PYTHON;
-  const venv = join(workerDir, ".venv", "bin", "python");
-  if (existsSync(venv)) return venv;
-  return "python3";
+export function resolveLaunch(
+  env: NodeJS.ProcessEnv = process.env,
+  command?: readonly string[],
+): WorkerLaunch | { reason: string } {
+  if (command && command.length > 0) return { command: command[0]!, args: command.slice(1), source: "config" };
+
+  const workerDir = resolveWorkerDir(env);
+  const script = env.LAYA_WORKER_SCRIPT ?? join(workerDir, "laya_worker.py");
+  if (env.LAYA_PYTHON) return { command: env.LAYA_PYTHON, args: [script], cwd: workerDir, source: "env" };
+
+  const venvPython = join(workerDir, ".venv", "bin", "python");
+  if (existsSync(venvPython) && existsSync(script)) {
+    return { command: venvPython, args: [script], cwd: workerDir, source: "checkout" };
+  }
+
+  const installed = which(WORKER_PACKAGE, env);
+  if (installed) return { command: installed, args: [], source: "path" };
+
+  const uvx = which("uvx", env);
+  if (uvx) return { command: uvx, args: ["--from", WORKER_REQUIREMENT, WORKER_PACKAGE], source: "uvx" };
+
+  return {
+    reason: `the Laya worker is not installed (install uv from https://docs.astral.sh/uv/, or run \`uv tool install ${WORKER_PACKAGE}\`)`,
+  };
+}
+
+/** First executable named `name` on PATH. */
+export function which(name: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (!dir) continue;
+    const candidate = join(dir, name);
+    try {
+      accessSync(candidate, constants.X_OK);
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not here
+    }
+  }
+  return undefined;
+}
+
+/** Why a worker's protocol version cannot be used, or undefined when it can. */
+export function protocolProblem(version: unknown): string | undefined {
+  const needed = `${SUPPORTED_PROTOCOL.major}.${SUPPORTED_PROTOCOL.minor}.x`;
+  const upgradeWorker = `upgrade it (\`uv tool upgrade ${WORKER_PACKAGE}\`, or \`uv sync\` in a checkout)`;
+  if (typeof version !== "string") return `the Laya worker is too old (no protocol version, pignon needs ${needed}); ${upgradeWorker}`;
+  const [major, minor] = version.split(".").map(Number);
+  if (major === undefined || minor === undefined || Number.isNaN(major) || Number.isNaN(minor)) {
+    return `the Laya worker reports an invalid protocol version "${version}"`;
+  }
+  // Before 1.0, a minor version change is a breaking change.
+  const compatible =
+    major === SUPPORTED_PROTOCOL.major && (major > 0 || minor === SUPPORTED_PROTOCOL.minor);
+  if (compatible) return undefined;
+  const older = major < SUPPORTED_PROTOCOL.major || (major === SUPPORTED_PROTOCOL.major && minor < SUPPORTED_PROTOCOL.minor);
+  return `the Laya worker speaks protocol ${version}, pignon needs ${needed}; ${older ? upgradeWorker : "upgrade pignon"}`;
 }
 
 /**
@@ -75,20 +145,19 @@ export function resolvePython(workerDir: string, env: NodeJS.ProcessEnv = proces
  * and the worker needs a Python environment (`uv sync` in the worker dir, or
  * LAYA_PYTHON).
  */
+export type LayaRuntimeStatus = { ok: true; launch?: WorkerLaunch } | { ok: false; reason: string };
+
 export function layaRuntimeStatus(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
-): { ok: true } | { ok: false; reason: string } {
+  command?: readonly string[],
+): LayaRuntimeStatus {
   if (platform !== "darwin" || arch !== "arm64") {
     return { ok: false, reason: "the local Laya model needs an Apple Silicon Mac" };
   }
-  if (env.LAYA_PYTHON) return { ok: true };
-  const workerDir = resolveWorkerDir(env);
-  if (!existsSync(join(workerDir, ".venv", "bin", "python"))) {
-    return { ok: false, reason: `the Laya worker is not installed (run \`uv sync\` in ${workerDir})` };
-  }
-  return { ok: true };
+  const launch = resolveLaunch(env, command);
+  return "reason" in launch ? { ok: false, reason: launch.reason } : { ok: true, launch };
 }
 
 // ---------------------------------------------------------------------------
@@ -121,8 +190,8 @@ const ENV_NAMES = new Set([
   "CURL_CA_BUNDLE",
 ]);
 
-/** Prefixes for the worker's own settings, Hugging Face Hub, MLX and locale. */
-const ENV_PREFIXES = ["LAYA_", "HF_", "HUGGINGFACE_", "MLX_", "LC_"];
+/** Prefixes for the worker's own settings, Hugging Face Hub, MLX, locale and uv (for `uvx`). */
+const ENV_PREFIXES = ["LAYA_", "HF_", "HUGGINGFACE_", "MLX_", "LC_", "UV_"];
 
 /**
  * Environment passed to the worker.
@@ -159,6 +228,8 @@ export class LayaWorkerError extends DeciderError {
 
 interface WorkerReady {
   type: "ready";
+  /** `PROTOCOL_VERSION` of the worker; absent before pignon. */
+  protocol?: string;
   model?: string;
   backend?: string;
 }
@@ -195,7 +266,7 @@ interface Pending {
 // ---------------------------------------------------------------------------
 
 export interface LayaWorkerOptions {
-  /** Executable to run. Defaults to `resolvePython()`. */
+  /** Executable to run. Defaults to what `resolveLaunch()` finds. */
   command?: string;
   /** Arguments. Defaults to the worker script (override with LAYA_WORKER_SCRIPT). */
   args?: string[];
@@ -207,6 +278,8 @@ export interface LayaWorkerOptions {
   timeoutMs?: number;
   /** How long to wait for the model to load and report `ready`. */
   startupTimeoutMs?: number;
+  /** Command from the config (`deciders[].command`), tried before anything else. */
+  launchCommand?: readonly string[];
   /** Spawn implementation injection (used by tests). */
   spawnFn?: SpawnFn;
 }
@@ -216,6 +289,9 @@ export interface LayaWorkerOptions {
  * Face; prompts never wait on startup, so this only bounds a hung worker.
  */
 const DEFAULT_STARTUP_TIMEOUT_MS = 300_000;
+
+/** Startup limit when the worker is fetched by uvx on first use. */
+const UVX_STARTUP_TIMEOUT_MS = 900_000;
 
 /** How long `stop()` waits after SIGTERM before sending SIGKILL. */
 const STOP_GRACE_MS = 500;
@@ -247,6 +323,8 @@ export class LayaWorker implements Decider {
   private readonly startupTimeoutMs: number;
   private readonly spawnFn: SpawnFn;
 
+  /** Why the worker cannot be started here, when no launcher was found. */
+  private readonly unavailable?: string;
   private child?: ChildProcessWithoutNullStreams;
   private ready = false;
   private starting?: Promise<void>;
@@ -259,15 +337,24 @@ export class LayaWorker implements Decider {
   constructor(options: LayaWorkerOptions = {}) {
     // Resolved here rather than at import time, so env overrides set before
     // construction apply and importing the module has no side effects.
-    const workerDir = options.cwd ?? resolveWorkerDir();
-    this.command = options.command ?? resolvePython(workerDir);
-    this.args = options.args ?? [
-      process.env.LAYA_WORKER_SCRIPT ?? join(workerDir, "laya_worker.py"),
-    ];
-    this.cwd = workerDir;
+    let launch: WorkerLaunch | { reason: string };
+    if (options.command !== undefined) {
+      launch = { command: options.command, args: options.args ?? [], source: "config" };
+    } else {
+      launch = resolveLaunch(process.env, options.launchCommand);
+    }
+    if ("reason" in launch) {
+      this.unavailable = launch.reason;
+      launch = { command: "", args: [], source: "config" };
+    }
+    this.command = launch.command;
+    this.args = launch.args;
+    this.cwd = options.cwd ?? launch.cwd;
     this.env = { ...workerEnv(), ...options.env };
     this.timeoutMs = options.timeoutMs ?? DEFAULT_THRESHOLDS.layaTimeoutMs;
-    this.startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
+    // uvx installs the worker (and MLX) on first use, before the model download.
+    this.startupTimeoutMs =
+      options.startupTimeoutMs ?? (launch.source === "uvx" ? UVX_STARTUP_TIMEOUT_MS : DEFAULT_STARTUP_TIMEOUT_MS);
     this.spawnFn = options.spawnFn ?? spawn;
   }
 
@@ -426,6 +513,7 @@ export class LayaWorker implements Decider {
   }
 
   private ensureStarted(): Promise<void> {
+    if (this.unavailable) return Promise.reject(new LayaWorkerError(this.unavailable));
     if (this.ready && this.child) return Promise.resolve();
     if (!this.starting) {
       this.starting = this.startProcess().finally(() => {
@@ -482,7 +570,17 @@ export class LayaWorker implements Decider {
       }, this.startupTimeoutMs);
 
       const rl = createInterface({ input: child.stdout });
-      rl.on("line", (line) => this.handleLine(line, settleReady, settleError));
+      // A worker this extension cannot talk to must not stay up holding its model.
+      const rejectWorker = (err: LayaWorkerError) => {
+        settleError(err);
+        this.log(err.message);
+        if (this.child === child) {
+          this.child = undefined;
+          this.ready = false;
+        }
+        child.kill("SIGKILL");
+      };
+      rl.on("line", (line) => this.handleLine(line, settleReady, settleError, rejectWorker));
 
       // Split on "\n" only: readline would also split on the "\r" progress
       // bars use to redraw, turning one bar into hundreds of log lines.
@@ -524,6 +622,7 @@ export class LayaWorker implements Decider {
     line: string,
     settleReady: () => void,
     settleError: (err: LayaWorkerError) => void,
+    rejectWorker: (err: LayaWorkerError) => void,
   ): void {
     let parsed: unknown;
     try {
@@ -537,6 +636,11 @@ export class LayaWorker implements Decider {
 
     if ("type" in message) {
       if (message.type === "ready") {
+        const problem = protocolProblem(message.protocol);
+        if (problem) {
+          rejectWorker(new LayaWorkerError(problem));
+          return;
+        }
         this.lastModel = message.model;
         settleReady();
       } else if (message.type === "fatal") {

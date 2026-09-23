@@ -323,6 +323,13 @@ describe("configPaths", () => {
     });
   });
 
+  it("follows Pi's PI_CODING_AGENT_DIR", () => {
+    expect(configPaths({ PI_CODING_AGENT_DIR: "/tmp/agent" })).toEqual({
+      path: "/tmp/agent/pignon.json",
+      legacyPath: "/tmp/agent/laya-router.json",
+    });
+  });
+
   it("defaults to ~/.pi/agent", () => {
     const { path, legacyPath } = configPaths({});
     expect(path).toMatch(/\.pi\/agent\/pignon\.json$/);

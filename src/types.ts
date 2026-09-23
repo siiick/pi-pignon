@@ -187,6 +187,8 @@ export interface LayaLocalDeciderSpec {
   type: "laya-local";
   /** Timeout for one decision; defaults to `thresholds.layaTimeoutMs`. */
   timeoutMs?: number;
+  /** Command that starts the worker, instead of finding it (e.g. a development checkout). */
+  command?: string[];
 }
 
 /** TypeSafe's hosted Jev model. The API key is read from an environment variable, never the config. */

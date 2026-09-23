@@ -1,8 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { LayaWorker, LayaWorkerError, resolveWorkerDir, workerEnv } from "../src/deciders/laya-local.js";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+import {
+  LayaWorker,
+  LayaWorkerError,
+  WORKER_REQUIREMENT,
+  protocolProblem,
+  resolveLaunch,
+  resolveWorkerDir,
+  which,
+  workerEnv,
+} from "../src/deciders/laya-local.js";
 import { parseDecision } from "../src/deciders/parse.js";
 import { DeciderError } from "../src/deciders/types.js";
 import { type FakeChild, createFakeChild, defaultRespond, healthResult, makeHarness, send } from "./helpers/fake-worker.js";
@@ -448,3 +460,110 @@ describe("workerEnv", () => {
     });
   });
 });
+
+describe("resolveLaunch", () => {
+  let dir: string;
+  const executable = (path: string) => {
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeFileSync(path, "#!/bin/sh\n");
+    chmodSync(path, 0o755);
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pignon-launch-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const empty = () => ({ LAYA_WORKER_DIR: join(dir, "worker"), PATH: join(dir, "bin") });
+
+  it("prefers the configured command", () => {
+    expect(resolveLaunch(empty(), ["uv", "run", "pignon-laya"])).toEqual({ command: "uv", args: ["run", "pignon-laya"], source: "config" });
+  });
+
+  it("uses LAYA_PYTHON with the worker script", () => {
+    const launch = resolveLaunch({ ...empty(), LAYA_PYTHON: "/opt/py" });
+    expect(launch).toEqual({ command: "/opt/py", args: [join(dir, "worker", "laya_worker.py")], cwd: join(dir, "worker"), source: "env" });
+  });
+
+  it("uses a source checkout's uv environment", () => {
+    executable(join(dir, "worker", ".venv", "bin", "python"));
+    writeFileSync(join(dir, "worker", "laya_worker.py"), "");
+
+    expect(resolveLaunch(empty())).toMatchObject({ command: join(dir, "worker", ".venv", "bin", "python"), source: "checkout" });
+  });
+
+  it("uses pignon-laya from PATH", () => {
+    executable(join(dir, "bin", "pignon-laya"));
+
+    expect(resolveLaunch(empty())).toEqual({ command: join(dir, "bin", "pignon-laya"), args: [], source: "path" });
+  });
+
+  it("falls back to uvx with a compatible version range", () => {
+    executable(join(dir, "bin", "uvx"));
+
+    expect(resolveLaunch(empty())).toEqual({
+      command: join(dir, "bin", "uvx"),
+      args: ["--from", WORKER_REQUIREMENT, "pignon-laya"],
+      source: "uvx",
+    });
+  });
+
+  it("explains what to install when nothing is found", () => {
+    expect(resolveLaunch(empty())).toEqual({ reason: expect.stringContaining("uv tool install pignon-laya") });
+  });
+
+  it("which() skips directories and non-executables", () => {
+    mkdirSync(join(dir, "bin", "uvx"), { recursive: true });
+    writeFileSync(join(dir, "bin", "plain"), "");
+    expect(which("uvx", { PATH: join(dir, "bin") })).toBeUndefined();
+    expect(which("plain", { PATH: join(dir, "bin") })).toBeUndefined();
+  });
+
+  it("a worker with no launcher fails with the reason instead of spawning", async () => {
+    const previous = { dir: process.env.LAYA_WORKER_DIR, path: process.env.PATH, python: process.env.LAYA_PYTHON };
+    process.env.LAYA_WORKER_DIR = join(dir, "worker");
+    process.env.PATH = join(dir, "bin");
+    delete process.env.LAYA_PYTHON;
+    try {
+      const worker = new LayaWorker();
+      await expect(worker.warmup()).rejects.toThrow("the Laya worker is not installed");
+      expect(worker.isReady).toBe(false);
+    } finally {
+      process.env.LAYA_WORKER_DIR = previous.dir;
+      process.env.PATH = previous.path;
+      if (previous.python !== undefined) process.env.LAYA_PYTHON = previous.python;
+      if (previous.dir === undefined) delete process.env.LAYA_WORKER_DIR;
+    }
+  });
+});
+
+describe("worker protocol", () => {
+  it.each([
+    ["0.3.0", undefined],
+    ["0.3.7", undefined],
+    ["0.2.0", "upgrade it"],
+    ["0.4.0", "upgrade pignon"],
+    ["1.0.0", "upgrade pignon"],
+  ])("protocol %s", (version, problem) => {
+    const result = protocolProblem(version);
+    if (problem === undefined) expect(result).toBeUndefined();
+    else expect(result).toContain(problem);
+  });
+
+  it("refuses a worker that does not report a protocol, and stops it", async () => {
+    const { worker, child } = makeHarness({ protocol: null });
+
+    await expect(worker.warmup()).rejects.toThrow("the Laya worker is too old");
+    expect(child()!.kill).toHaveBeenCalledWith("SIGKILL");
+    expect(worker.isReady).toBe(false);
+  });
+
+  it("refuses a newer protocol and says to upgrade pignon", async () => {
+    const { worker } = makeHarness({ protocol: "0.9.0" });
+
+    await expect(worker.warmup()).rejects.toThrow("pignon needs 0.3.x; upgrade pignon");
+  });
+});
+

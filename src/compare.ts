@@ -5,8 +5,9 @@
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+
+import { agentDir } from "./config/load.js";
 
 import type { DeciderAttempt, RouterLogEntry, RoutingTable } from "./types.js";
 
@@ -94,9 +95,9 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /** Default export location: outside any project, next to Pi's own files. */
-export function defaultExportPath(now = new Date()): string {
+export function defaultExportPath(now = new Date(), env: NodeJS.ProcessEnv = process.env): string {
   const stamp = now.toISOString().replace(/[:.]/g, "-");
-  return join(homedir(), ".pi", "agent", "pignon-exports", `decisions-${stamp}.jsonl`);
+  return join(agentDir(env), "pignon-exports", `decisions-${stamp}.jsonl`);
 }
 
 /**

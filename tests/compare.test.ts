@@ -89,7 +89,7 @@ describe("exportDecisions", () => {
   });
 
   it("defaults to a timestamped file under ~/.pi/agent", () => {
-    expect(defaultExportPath(new Date("2026-09-23T10:00:00.000Z"))).toMatch(
+    expect(defaultExportPath(new Date("2026-09-23T10:00:00.000Z"), {})).toMatch(
       /\.pi\/agent\/pignon-exports\/decisions-2026-09-23T10-00-00-000Z\.jsonl$/,
     );
   });

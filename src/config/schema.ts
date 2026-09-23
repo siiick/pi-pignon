@@ -107,6 +107,13 @@ export const LayaLocalDeciderSchema = Type.Object(
   {
     type: Type.Literal("laya-local", { description: "The local Laya model (Apple Silicon, laya-mlx)." }),
     timeoutMs: timeoutMs("Timeout for one decision, in milliseconds. Default: thresholds.layaTimeoutMs."),
+    command: Type.Optional(
+      Type.Array(Type.String({ minLength: 1 }), {
+        minItems: 1,
+        description:
+          "Command that starts the worker, e.g. [\"uv\", \"run\", \"--project\", \"/path/to/pignon/worker\", \"pignon-laya\"]. Default: found automatically (checkout, pignon-laya on PATH, then uvx).",
+      }),
+    ),
   },
   { additionalProperties: false },
 );

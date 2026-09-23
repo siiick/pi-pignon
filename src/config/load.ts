@@ -74,11 +74,16 @@ export interface ConfigPaths {
   legacyPath: string;
 }
 
+/** Pi's config directory: PI_CODING_AGENT_DIR, else `~/.pi/agent`. */
+export function agentDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+}
+
 export function configPaths(env: NodeJS.ProcessEnv = process.env): ConfigPaths {
-  const agentDir = join(homedir(), ".pi", "agent");
+  const dir = agentDir(env);
   return {
-    path: env.PIGNON_CONFIG ?? join(agentDir, "pignon.json"),
-    legacyPath: env.LAYA_ROUTER_CONFIG ?? join(agentDir, "laya-router.json"),
+    path: env.PIGNON_CONFIG ?? join(dir, "pignon.json"),
+    legacyPath: env.LAYA_ROUTER_CONFIG ?? join(dir, "laya-router.json"),
   };
 }
 

@@ -17,7 +17,7 @@ being run.
 
 Worker -> extension:
 
-    {"type": "ready", "model": "aac6fef/laya-mlx", "backend": "laya-mlx"}
+    {"type": "ready", "model": "aac6fef/laya-mlx", "backend": "laya-mlx", "protocol": "0.3.0"}
     {"type": "fatal", "error": "..."}
     {"id": 1, "ok": true, "result": {...}}
     {"id": 1, "ok": false, "error": "..."}
@@ -195,7 +195,7 @@ def main() -> int:
         emit({"type": "fatal", "error": str(exc)})
         return 1
 
-    emit({"type": "ready", "model": engine.model_repo, "backend": "laya-mlx"})
+    emit({"type": "ready", "model": engine.model_repo, "backend": "laya-mlx", "protocol": PROTOCOL_VERSION})
 
     for raw in sys.stdin:
         line = raw.strip()

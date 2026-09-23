@@ -4,3 +4,5 @@ worker/.venv/
 __pycache__/
 .DS_Store
 *.pyc
+worker/dist/
+*.tgz

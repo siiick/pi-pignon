@@ -106,6 +106,8 @@ export interface HarnessOptions {
   ready?: boolean | ((index: number) => boolean);
   timeoutMs?: number;
   startupTimeoutMs?: number;
+  /** Protocol version in the `ready` line; null leaves it out. Defaults to 0.3.0. */
+  protocol?: string | null;
 }
 
 export function makeHarness(options: HarnessOptions = {}) {
@@ -117,7 +119,7 @@ export function makeHarness(options: HarnessOptions = {}) {
     const ready = typeof options.ready === "function" ? options.ready(index) : options.ready !== false;
     if (ready) {
       // Emit `ready` after startProcess has attached its listeners.
-      queueMicrotask(() => send(child, { type: "ready", model: "aac6fef/laya-mlx", backend: "laya-mlx" }));
+      queueMicrotask(() => send(child, { type: "ready", model: "aac6fef/laya-mlx", backend: "laya-mlx", protocol: options.protocol === undefined ? "0.3.0" : options.protocol ?? undefined }));
     }
     return child as unknown as ReturnType<typeof import("node:child_process").spawn>;
   });

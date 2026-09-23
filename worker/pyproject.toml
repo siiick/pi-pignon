@@ -1,10 +1,37 @@
 [project]
-name = "laya-worker"
-version = "0.2.0"
-description = "Long-lived stdio worker for the Laya System-1 decision model (laya-mlx)"
+name = "pignon-laya"
+version = "0.1.0"
+description = "Local Laya decision worker for pignon, the model router for the Pi coding agent (Apple Silicon, laya-mlx)"
+readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["laya-mlx>=0.1.0"]
+authors = [{ name = "Nicolas Chaintron" }]
+keywords = ["pi-coding-agent", "llm-router", "laya", "mlx", "apple-silicon"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development",
+]
+dependencies = ["laya-mlx>=0.2.0,<0.3"]
 
-[tool.uv]
-package = false
+[project.urls]
+Homepage = "https://github.com/siiick/pignon"
+Repository = "https://github.com/siiick/pignon"
+Issues = "https://github.com/siiick/pignon/issues"
+
+[project.scripts]
+pignon-laya = "laya_worker:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["laya_worker.py"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["laya_worker.py", "test_laya_worker.py", "README.md", "LICENSE"]

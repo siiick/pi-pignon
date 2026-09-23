@@ -99,6 +99,7 @@ class MainLoopTest(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(messages[0]["type"], "ready")
+        self.assertEqual(messages[0]["protocol"], w.PROTOCOL_VERSION)
         self.assertEqual(messages[1], {"id": None, "ok": False, "error": "Request must be a JSON object"})
         self.assertEqual(messages[2]["id"], None)
         self.assertTrue(messages[2]["error"].startswith("Invalid JSON"))

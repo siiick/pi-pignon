@@ -11,7 +11,7 @@ import { dirname } from "node:path";
 import { type PresetName, PRESETS, PRESET_NAMES } from "./config/presets.js";
 import { CONFIG_SCHEMA_URL } from "./config/schema.js";
 import { DEFAULT_API_KEY_ENV } from "./deciders/jev.js";
-import { layaRuntimeStatus } from "./deciders/laya-local.js";
+import { type WorkerLaunch, layaRuntimeStatus } from "./deciders/laya-local.js";
 import { StrategyDecider } from "./deciders/strategy.js";
 import { type Decider, DeciderError } from "./deciders/types.js";
 import { buildQuestions } from "./deciders/questions.js";
@@ -140,6 +140,21 @@ export async function runDoctor<M>(input: DoctorInput<M>): Promise<string[]> {
   return lines;
 }
 
+function describeLaunch(launch: WorkerLaunch): string {
+  switch (launch.source) {
+    case "config":
+      return `the configured command (${[launch.command, ...launch.args].join(" ")})`;
+    case "env":
+      return `LAYA_PYTHON (${launch.command})`;
+    case "checkout":
+      return `the source checkout (${launch.cwd})`;
+    case "path":
+      return launch.command;
+    case "uvx":
+      return `uvx (${launch.args[1]}; the first start installs it)`;
+  }
+}
+
 async function checkDecider(
   decider: Decider,
   config: RouterConfig,
@@ -149,8 +164,11 @@ async function checkDecider(
 ): Promise<void> {
   const name = `${decider.id}${decider.remote ? " (remote)" : ""}`;
   if (decider.id === "laya-local") {
-    const status = layaStatus(env);
+    const spec = config.deciders?.find((d) => d.type === "laya-local");
+    const command = spec?.type === "laya-local" ? spec.command : undefined;
+    const status = layaStatus(env, process.platform, process.arch, command);
     if (!status.ok) return report.fail(`${name}: ${status.reason}`);
+    if (status.launch) report.ok(`${name}: worker from ${describeLaunch(status.launch)}`);
   }
   if (!decider.isReady) {
     if (decider.id === "laya-local") {

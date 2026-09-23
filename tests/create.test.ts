@@ -68,15 +68,19 @@ describe("layaRuntimeStatus", () => {
     });
   });
 
-  it("accepts an explicit LAYA_PYTHON", () => {
-    expect(layaRuntimeStatus({ LAYA_PYTHON: "/usr/bin/python3" }, "darwin", "arm64")).toEqual({ ok: true });
+  it("reports how the worker will be started", () => {
+    const status = layaRuntimeStatus({ LAYA_PYTHON: "/usr/bin/python3" }, "darwin", "arm64");
+    expect(status).toMatchObject({ ok: true, launch: { command: "/usr/bin/python3", source: "env" } });
   });
 
-  it("asks for uv sync when the worker environment is missing", () => {
+  it("says how to install the worker when nothing can start it", () => {
     const dir = mkdtempSync(join(tmpdir(), "pignon-worker-"));
     try {
-      const status = layaRuntimeStatus({ LAYA_WORKER_DIR: dir }, "darwin", "arm64");
-      expect(status).toEqual({ ok: false, reason: `the Laya worker is not installed (run \`uv sync\` in ${dir})` });
+      const status = layaRuntimeStatus({ LAYA_WORKER_DIR: dir, PATH: dir }, "darwin", "arm64");
+      expect(status).toEqual({
+        ok: false,
+        reason: "the Laya worker is not installed (install uv from https://docs.astral.sh/uv/, or run `uv tool install pignon-laya`)",
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

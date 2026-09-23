@@ -55,7 +55,10 @@ export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}
 function build(spec: DeciderSpec, config: RouterConfig, env: NodeJS.ProcessEnv): Decider {
   switch (spec.type) {
     case "laya-local":
-      return new LayaWorker({ timeoutMs: spec.timeoutMs ?? config.thresholds.layaTimeoutMs });
+      return new LayaWorker({
+        timeoutMs: spec.timeoutMs ?? config.thresholds.layaTimeoutMs,
+        ...(spec.command ? { launchCommand: spec.command } : {}),
+      });
     case "jev":
       return new JevDecider({
         env,
