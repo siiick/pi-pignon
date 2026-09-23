@@ -214,6 +214,25 @@ describe("parseConfig: deciders", () => {
   });
 });
 
+describe("parseConfig: strategy", () => {
+  it("merges over the defaults", () => {
+    const { config, errors } = parseConfig({ strategy: { mode: "parallel", pick: "first" } });
+
+    expect(errors).toEqual([]);
+    expect(config.strategy).toEqual({ ...DEFAULT_CONFIG.strategy, mode: "parallel", pick: "first" });
+  });
+
+  it("keeps the default strategy when the section is invalid", () => {
+    const { config, errors } = parseConfig({ strategy: { mode: "race", escalateBelow: 2 } });
+
+    expect(errors).toEqual([
+      "strategy.mode: expected one of sequential, parallel",
+      "strategy.escalateBelow: must be <= 1",
+    ]);
+    expect(config.strategy).toEqual(DEFAULT_CONFIG.strategy);
+  });
+});
+
 describe("parseConfig: laya-router (v1) tiers", () => {
   it("merges tier cells over the defaults and flags the format", () => {
     const { config, errors, warnings, legacy } = parseConfig({ tiers: { hard: { direct: OPUS } } });

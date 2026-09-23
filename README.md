@@ -98,6 +98,8 @@ pi
 | `/pignon config clear` | Hide the config widget |
 | `/pignon config migrate` | Convert a laya-router config file to the pignon format |
 | `/pignon-stats` | Show tier × form × confidence histogram for the session |
+| `/pignon-stats compare` | Compare two deciders over the decisions both answered (see [Using several deciders](#using-several-deciders)) |
+| `/pignon-stats export [path]` | Write the session's decisions as JSON lines (default `~/.pi/agent/pignon-exports/`); prompts are stored as hashes, never text |
 | `/pignon-stats clear` | Hide the stats widget |
 
 `/laya` and `/laya-stats` still work as aliases of `/pignon` and `/pignon-stats`;
@@ -113,7 +115,7 @@ they will be removed in a later release.
     upgrade
   ```
 
-  The name after `pignon` is the decider that answered; `jev ☁` means the prompt was sent to the Jev API.
+  The name after `pignon` is the decider that answered; `jev ☁` means the prompt was sent to the Jev API. With several deciders, a third line shows each one's answer and marks the one used, e.g. `laya standard 0.05 · jev ☁ hard 0.93 ✓`.
 
   `👁 would switch to …` in shadow mode, `· kept current model` when the policy holds, `✗ …` on failure. Expand tool output (`Ctrl+O`) to see confidence bars for tier and exploration, the current model, context size, the decision model and the question wording version. Cards are session entries (`pignon-decision`; `laya-decision` in older sessions), so they reappear when a session is resumed and are never sent to the LLM.
 - **Footer status**: the latest verdict at a glance.
@@ -168,9 +170,39 @@ Add the `$schema` line to get autocompletion and inline errors in your editor.
 | | `timeoutMs` | `1500` | Timeout for one decision |
 | | `maxRetries` | `0` | Retries after a failed call; each gets the full timeout |
 
-For now only the first decider in the list is used. Using the next one as a
-fallback, or running them side by side to compare them, is
-[planned](docs/PLAN-deciders.md#decision-strategies).
+### Using several deciders
+
+List more than one and `strategy` says how they work together:
+
+```json
+{
+  "deciders": [{ "type": "laya-local" }, { "type": "jev" }],
+  "strategy": { "mode": "sequential", "escalateBelow": 0.75 }
+}
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `mode` | `sequential` | `sequential`: ask the deciders in order; the next one is asked only when the previous one is not ready (e.g. Laya still loading), fails, or is less confident than `escalateBelow`. Remote deciders are only called when needed. `parallel`: ask all of them at once |
+| `escalateBelow` | `0.75` | Sequential: tier confidence under which the next decider is asked. The most confident answer wins |
+| `pick` | `most-confident` | Parallel: route on the most confident answer, or `first`: on the first decider in the list that answered, the others being only recorded |
+| `budgetMs` | `3000` | Wall-time limit for one decision, all deciders included |
+
+**Benchmark Laya against Jev** without changing how you route: keep Laya in
+charge and record Jev's answers next to it, then compare them.
+
+```json
+{
+  "deciders": [{ "type": "laya-local" }, { "type": "jev" }],
+  "strategy": { "mode": "parallel", "pick": "first" }
+}
+```
+
+`/pignon-stats compare` shows tier and exploration agreement, a confusion
+matrix, mean confidence, latency, failures and cost per decider.
+`/pignon-stats export` writes every decision (with each decider's answer) as
+JSON lines for your own analysis. In parallel mode, every routed prompt is sent
+to Jev.
 
 ### Swap a model
 
@@ -265,10 +297,12 @@ pignon/
 │   │   ├── parse.ts         # Raw answers -> RoutingDecision (shared by all deciders)
 │   │   ├── laya-local.ts    # Local Laya decider: supervises the stdio worker
 │   │   ├── jev.ts           # Remote Jev decider, through @typesafe-ai/sdk
+│   │   ├── strategy.ts      # Several deciders behind one: sequential or parallel
 │   │   └── create.ts        # Config -> decider, with the automatic choice
 │   ├── policy.ts            # Pure routing policy (the core logic)
 │   ├── router.ts            # Per-prompt routing over a Pi-free RouterHost
 │   ├── stats.ts             # /pignon-stats histogram
+│   ├── compare.ts           # /pignon-stats compare and export
 │   ├── ui.ts                # Spinner and decision cards
 │   └── extension.ts         # Pi ExtensionAPI wiring
 ├── worker/

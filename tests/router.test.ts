@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { parseDecision } from "../src/deciders/parse.js";
+import { StrategyDecider } from "../src/deciders/strategy.js";
 import type { Decider, DeciderResult } from "../src/deciders/types.js";
 import { type HostModel, type RouterHost, MAX_PROMPT_CHARS, routePrompt } from "../src/router.js";
 import { DEFAULT_CONFIG } from "../src/config/defaults.js";
@@ -136,4 +138,26 @@ describe("routePrompt", () => {
     expect(host.switchModel).toHaveBeenCalledWith(FLASH);
     expect(entry).toMatchObject({ tier: "easy", currentTier: "pro", questionsVersion: "q7" });
   });
+
+  it("records which decider of a strategy answered, and every attempt", async () => {
+    const answer = (id: string, tier: string, confidence: number) =>
+      fakeDecider(async () => ({
+        deciderId: id,
+        model: `${id}-model`,
+        answers: { reasoning_demand: { choice: tier, confidence }, needs_exploration: { choice: "no", confidence: 0.9 } },
+        latencyMs: 3,
+      }));
+    const laya = { ...answer("laya-local", "standard", 0.05), id: "laya-local" };
+    const jev = { ...answer("jev", "trivial", 0.97), id: "jev", remote: true };
+    const strategy = new StrategyDecider([laya, jev], DEFAULT_CONFIG.strategy, (a, l) => parseDecision(a, l));
+
+    const { entry } = await routePrompt(fakeHost(), options(strategy), "rename foo");
+
+    expect(entry).toMatchObject({ decider: "jev", remote: true, deciderModel: "jev-model", tier: "trivial" });
+    expect(entry.attempts!.map((a) => [a.decider, a.used])).toEqual([
+      ["laya-local", false],
+      ["jev", true],
+    ]);
+  });
 });
+

@@ -2,7 +2,7 @@
  * Built-in configuration: what pignon does with no config file.
  */
 
-import type { ModelSpec, QuestionWording, RouterConfig, Thresholds } from "../types.js";
+import type { ModelSpec, QuestionWording, RouterConfig, StrategyConfig, Thresholds } from "../types.js";
 import type { TierFile } from "./schema.js";
 
 /**
@@ -60,11 +60,19 @@ export const DEFAULT_THRESHOLDS: Readonly<Thresholds> = {
   layaTimeoutMs: 2_500,
 };
 
+export const DEFAULT_STRATEGY: StrategyConfig = {
+  mode: "sequential",
+  escalateBelow: 0.75,
+  pick: "most-confident",
+  budgetMs: 3_000,
+};
+
 const spec = (name: string): ModelSpec => DEFAULT_MODELS[name]!;
 
 /** The defaults, resolved. Kept in sync with DEFAULT_TIERS by a test. */
 export const DEFAULT_CONFIG: RouterConfig = {
   deciders: null,
+  strategy: DEFAULT_STRATEGY,
   table: [
     {
       id: "trivial",

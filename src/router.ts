@@ -13,6 +13,7 @@ import { buildQuestions } from "./deciders/questions.js";
 import type { Decider } from "./deciders/types.js";
 import { decide, formOf, profileFromModel, specOf } from "./policy.js";
 import type {
+  DeciderAttempt,
   PolicyOutput,
   Price,
   Profile,
@@ -122,8 +123,11 @@ export async function routePrompt<M extends HostModel>(
 
     const entry = buildLogEntry({
       ...entryBase,
+      deciderId: result.deciderId,
+      remote: result.remote ?? decider.remote,
       deciderModel: result.model,
       ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+      ...(result.attempts ? { attempts: result.attempts } : {}),
       decision,
       verdict,
       applied,
@@ -161,7 +165,11 @@ interface LogEntryInput {
   mode: RouterMode;
   config: RouterConfig;
   decider: Decider;
+  /** Decider that answered, when it differs from `decider` (a strategy). */
+  deciderId?: string;
+  remote?: boolean;
   costUsd?: number;
+  attempts?: DeciderAttempt[];
   currentModel: string | undefined;
   deciderModel: string;
   prompt: string;
@@ -179,9 +187,10 @@ function buildLogEntry(input: LogEntryInput): RouterLogEntry {
   return {
     ts: Date.now(),
     mode: input.mode,
-    decider: input.decider.id,
-    remote: input.decider.remote,
+    decider: input.deciderId ?? input.decider.id,
+    remote: input.remote ?? input.decider.remote,
     ...(input.costUsd !== undefined ? { costUsd: input.costUsd } : {}),
+    ...(input.attempts ? { attempts: input.attempts } : {}),
     deciderModel: input.deciderModel,
     questionsVersion: input.config.questions.version,
     promptHash: hashPrompt(input.prompt),

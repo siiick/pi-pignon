@@ -28,11 +28,19 @@ import {
   type QuestionWording,
   type RouterConfig,
   type RoutingTable,
+  type StrategyConfig,
   type Thresholds,
   type TierSpec,
   FORMS,
 } from "../types.js";
-import { DEFAULT_CONFIG, DEFAULT_MODELS, DEFAULT_QUESTIONS, DEFAULT_THRESHOLDS, DEFAULT_TIERS } from "./defaults.js";
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_MODELS,
+  DEFAULT_QUESTIONS,
+  DEFAULT_STRATEGY,
+  DEFAULT_THRESHOLDS,
+  DEFAULT_TIERS,
+} from "./defaults.js";
 import {
   type ModelRef,
   type TierFile,
@@ -41,6 +49,7 @@ import {
   DECIDER_SCHEMAS,
   ModelSpecSchema,
   QuestionsSchema,
+  StrategySchema,
   ThresholdsSchema,
   TiersSchema,
 } from "./schema.js";
@@ -136,6 +145,7 @@ const checkModelSpec = Compile(ModelSpecSchema);
 const checkTiers = Compile(TiersSchema);
 const checkQuestions = Compile(QuestionsSchema);
 const checkConfidenceSource = Compile(ConfidenceSourceSchema);
+const checkStrategy = Compile(StrategySchema);
 const checkDecider = {
   "laya-local": Compile(DECIDER_SCHEMAS["laya-local"]),
   jev: Compile(DECIDER_SCHEMAS.jev),
@@ -155,6 +165,11 @@ export function parseConfig(raw: unknown): ParsedConfig {
   if (raw.version !== undefined && raw.version !== 2) errors.push("version: expected 2");
 
   const deciders = parseDeciders(raw.deciders, errors);
+  let strategy: StrategyConfig = DEFAULT_STRATEGY;
+  if (raw.strategy !== undefined) {
+    if (checkStrategy.Check(raw.strategy)) strategy = { ...DEFAULT_STRATEGY, ...raw.strategy };
+    else errors.push(...formatErrors("strategy", checkStrategy.Errors(raw.strategy)));
+  }
   const thresholds = parseThresholds(raw.thresholds, errors);
   const models = parseModels(raw.models, errors);
   const questions = parseQuestions(raw.questions, errors);
@@ -178,7 +193,7 @@ export function parseConfig(raw: unknown): ParsedConfig {
     table = parseTiers(raw.tiers, models, errors) ?? defaultTable;
   }
 
-  return { config: { deciders, table, thresholds, questions, confidenceSource }, errors, warnings, legacy };
+  return { config: { deciders, strategy, table, thresholds, questions, confidenceSource }, errors, warnings, legacy };
 }
 
 /**

@@ -14,6 +14,8 @@
  *   /pignon config [clear] -> routing table and settings in use
  *   /pignon config migrate -> convert a laya-router config file
  *   /pignon-stats [clear]  -> session statistics
+ *   /pignon-stats compare  -> how two deciders agree (parallel strategy)
+ *   /pignon-stats export [path] -> decisions as JSON lines
  *
  * `/laya` and `/laya-stats` remain as aliases for one release.
  *
@@ -27,6 +29,7 @@ import type {
   SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 
+import { buildCompareLines, defaultExportPath, exportDecisions } from "./compare.js";
 import { describeConfig } from "./config/describe.js";
 import { loadConfig } from "./config/load.js";
 import { migrateConfigFile } from "./config/migrate.js";
@@ -295,7 +298,8 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     };
 
     const statsCommand = async (args: string, ctx: ExtensionContext) => {
-      if (args.trim() === "clear") {
+      const [sub = "", ...rest] = args.trim().split(/\s+/);
+      if (sub === "clear") {
         showWidget(ctx, "pignon-stats", undefined);
         return;
       }
@@ -311,6 +315,23 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
         return;
       }
 
+      if (sub === "compare") {
+        const lines = buildCompareLines(rows, config.table);
+        if (lines) showWidget(ctx, "pignon-stats", lines);
+        else notify(ctx, "pignon: no decisions answered by two deciders yet (set strategy.mode to parallel to compare them)");
+        return;
+      }
+      if (sub === "export") {
+        const path = rest.join(" ") || defaultExportPath();
+        try {
+          exportDecisions(rows, path);
+          notify(ctx, `pignon: wrote ${rows.length} decisions to ${path}`);
+        } catch (err) {
+          notify(ctx, `pignon: could not write ${path}: ${err instanceof Error ? err.message : String(err)}`, "error");
+        }
+        return;
+      }
+
       showWidget(ctx, "pignon-stats", buildStatsLines(rows, config.table));
     };
 
@@ -322,8 +343,12 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       getArgumentCompletions: completions,
       handler: modeCommand,
     });
+    const statsCompletions = (prefix: string) =>
+      ["clear", "compare", "export"].filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
+
     pi.registerCommand("pignon-stats", {
-      description: "Tier x form x confidence breakdown for this session",
+      description: "Session statistics (compare: decider vs decider · export [path]: JSON lines)",
+      getArgumentCompletions: statsCompletions,
       handler: statsCommand,
     });
     pi.registerCommand("laya", {
@@ -333,6 +358,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     });
     pi.registerCommand("laya-stats", {
       description: "Alias of /pignon-stats (deprecated)",
+      getArgumentCompletions: statsCompletions,
       handler: statsCommand,
     });
   };

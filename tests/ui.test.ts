@@ -44,6 +44,50 @@ describe("decisionCardLines", () => {
     expect(decisionCardLines(entry({ decider: "jev", remote: true }), false, theme)[0]).toMatch(/^pignon jev ☁ hard\/exploration/);
   });
 
+  it("lists every decider asked, marking the answer used", () => {
+    const lines = decisionCardLines(
+      entry({
+        decider: "jev",
+        remote: true,
+        attempts: [
+          { decider: "laya-local", remote: false, outcome: "answered", used: false, tier: "standard", tierConfidence: 0.05 },
+          { decider: "jev", remote: true, outcome: "answered", used: true, tier: "hard", tierConfidence: 0.93 },
+        ],
+      }),
+      false,
+      theme,
+    );
+    expect(lines[2]).toBe("  laya standard 0.05 · jev ☁ hard 0.93 ✓");
+  });
+
+  it("shows deciders that failed or were still loading", () => {
+    const lines = decisionCardLines(
+      entry({
+        attempts: [
+          { decider: "laya-local", remote: false, outcome: "not-ready", used: false },
+          { decider: "jev", remote: true, outcome: "failed", used: false, error: "jev: rate limited (HTTP 429)" },
+        ],
+      }),
+      false,
+      theme,
+    );
+    expect(lines[2]).toBe("  laya ⏳ not ready · jev ☁ ✗ jev: rate limited (HTTP 429)");
+  });
+
+  it("adds no attempts line when only one decider was asked", () => {
+    const lines = decisionCardLines(
+      entry({
+        attempts: [
+          { decider: "laya-local", remote: false, outcome: "answered", used: true, tier: "hard", tierConfidence: 0.9 },
+          { decider: "jev", remote: true, outcome: "not-asked", used: false },
+        ],
+      }),
+      false,
+      theme,
+    );
+    expect(lines).toHaveLength(2);
+  });
+
   it("shows the decision's cost when expanded", () => {
     const lines = decisionCardLines(entry({ decider: "jev", remote: true, costUsd: 0.00003 }), true, theme);
     expect(lines.at(-1)).toContain("$0.000030");

@@ -9,6 +9,8 @@
 import type { DeciderSpec, RouterConfig } from "../types.js";
 import { DEFAULT_API_KEY_ENV, JevDecider } from "./jev.js";
 import { LayaWorker, layaRuntimeStatus } from "./laya-local.js";
+import { parseDecision } from "./parse.js";
+import { StrategyDecider } from "./strategy.js";
 import { type Decider, type DeciderResult, DeciderError } from "./types.js";
 
 export interface CreatedDecider {
@@ -42,10 +44,12 @@ export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}
     }
   }
 
-  if (specs.length > 1) {
-    notes.push(`only the first decider (${specs[0]!.type}) is used for now; the others are ignored`);
-  }
-  return { decider: build(specs[0]!, config, env), notes };
+  const deciders = specs.map((spec) => build(spec, config, env));
+  if (deciders.length === 1) return { decider: deciders[0]!, notes };
+  return {
+    decider: new StrategyDecider(deciders, config.strategy, (answers, latencyMs) => parseDecision(answers, latencyMs, config)),
+    notes,
+  };
 }
 
 function build(spec: DeciderSpec, config: RouterConfig, env: NodeJS.ProcessEnv): Decider {

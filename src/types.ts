@@ -201,10 +201,41 @@ export interface JevDeciderSpec {
 
 export type DeciderSpec = LayaLocalDeciderSpec | JevDeciderSpec;
 
+/** How several deciders are combined (see `deciders/strategy.ts`). */
+export interface StrategyConfig {
+  /** `sequential`: in order, until one is confident enough. `parallel`: all at once. */
+  mode: "sequential" | "parallel";
+  /** Sequential: move to the next decider when tier confidence is below this. */
+  escalateBelow: number;
+  /** Parallel: route on the most confident answer, or on the first decider in the list that answered. */
+  pick: "most-confident" | "first";
+  /** Wall-time limit for one decision, all deciders included. */
+  budgetMs: number;
+}
+
+/** What happened to one decider during one decision. */
+export interface DeciderAttempt {
+  decider: string;
+  remote: boolean;
+  /** `not-ready`: still loading or missing a key. `not-asked`: an earlier decider was confident enough. */
+  outcome: "answered" | "failed" | "not-ready" | "not-asked";
+  /** Whether this answer is the one routed on. */
+  used: boolean;
+  model?: string;
+  tier?: Tier | null;
+  tierConfidence?: number;
+  needsExploration?: boolean;
+  explorationConfidence?: number;
+  latencyMs?: number;
+  costUsd?: number;
+  error?: string;
+}
+
 /** Full, resolved router configuration. */
 export interface RouterConfig {
   /** Deciders in the order to try them, or null to pick one automatically. */
   deciders: readonly DeciderSpec[] | null;
+  strategy: StrategyConfig;
   table: RoutingTable;
   thresholds: Thresholds;
   questions: QuestionWording;
@@ -256,6 +287,8 @@ export interface RouterLogEntry {
   remote?: boolean;
   /** Price of the decision in USD, for remote deciders that report it. */
   costUsd?: number;
+  /** Every decider tried, when several are configured. */
+  attempts?: DeciderAttempt[];
   /** Model of the decider that answered. */
   deciderModel?: string;
   /** Same as `deciderModel`, in entries written before pignon. */

@@ -222,7 +222,7 @@ The old `~/.pi/agent/extensions/jev-router` becomes redundant: its behavior equa
 2. ✅ **Configurable table.** TypeBox schema, aliases, ordered tiers, questions built from config,
    v1 migration, dynamic tiers in policy/UI/stats.
 3. ✅ **Jev decider.** SDK adapter, error mapping, logger/retry hardening, contract + unit tests.
-4. **Strategies.** sequential + parallel, budget, `/pignon-stats compare|export`, attempts on card and log, stats
+4. ✅ **Strategies.** sequential + parallel, budget, `/pignon-stats compare|export`, attempts on card and log, stats
    per decider (escalation rate, cost).
 5. **Onboarding.** Presets + `extends`, `/pignon init|doctor|config`, JSON Schema generation.
 6. **Publish.** PyPI `pignon-laya` + uvx launcher + protocol check, docs, package metadata, live test, `npm pack` dry-run, and a test install

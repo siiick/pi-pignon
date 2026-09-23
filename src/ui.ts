@@ -84,6 +84,26 @@ function outcome(entry: RouterLogEntry, theme: CardTheme): string {
   return theme.fg("muted", "· kept current model");
 }
 
+/** One line per decision with several deciders: who answered what, and which answer was used (✓). */
+function attemptsLine(entry: RouterLogEntry, theme: CardTheme): string | undefined {
+  const asked = (entry.attempts ?? []).filter((a) => a.outcome !== "not-asked");
+  if (asked.length < 2) return undefined;
+  const parts = asked.map((a) => {
+    const name = `${DECIDER_LABELS[a.decider] ?? a.decider}${a.remote ? " ☁" : ""}`;
+    switch (a.outcome) {
+      case "answered": {
+        const text = `${name} ${a.tier ?? "?"} ${(a.tierConfidence ?? 0).toFixed(2)}`;
+        return a.used ? theme.fg("text", `${text} ✓`) : theme.fg("dim", text);
+      }
+      case "failed":
+        return theme.fg("error", `${name} ✗ ${(a.error ?? "failed").slice(0, 40)}`);
+      default:
+        return theme.fg("muted", `${name} ⏳ not ready`);
+    }
+  });
+  return `  ${parts.join(theme.fg("dim", " · "))}`;
+}
+
 /** Lines of the decision card; the first line is the collapsed view. */
 export function decisionCardLines(entry: RouterLogEntry, expanded: boolean, theme: CardTheme): string[] {
   const decider = entry.decider ? ` ${DECIDER_LABELS[entry.decider] ?? entry.decider}${entry.remote ? " ☁" : ""}` : "";
@@ -97,6 +117,8 @@ export function decisionCardLines(entry: RouterLogEntry, expanded: boolean, them
 
   const lines = [`${head} ${profile}${summary}  ${outcome(entry, theme)}`];
   if (entry.error === undefined) lines.push(theme.fg("dim", `  ${entry.reason}`));
+  const attempts = attemptsLine(entry, theme);
+  if (attempts) lines.push(attempts);
   if (!expanded) return lines;
 
   const label = (s: string) => theme.fg("muted", `  ${s.padEnd(12)}`);

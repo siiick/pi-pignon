@@ -7,6 +7,7 @@ import { DEFAULT_CONFIG } from "../src/config/defaults.js";
 import { UnavailableDecider, createDecider } from "../src/deciders/create.js";
 import { JevDecider } from "../src/deciders/jev.js";
 import { LayaWorker, layaRuntimeStatus } from "../src/deciders/laya-local.js";
+import { StrategyDecider } from "../src/deciders/strategy.js";
 
 const layaOk = () => ({ ok: true as const });
 const layaMissing = () => ({ ok: false as const, reason: "the Laya worker is not installed" });
@@ -44,13 +45,18 @@ describe("createDecider with a deciders section", () => {
     expect(decider.model).toBe("jev-1.13.0");
   });
 
-  it("uses the first decider for now and says the others are ignored", () => {
-    const config = { ...DEFAULT_CONFIG, deciders: [{ type: "jev" as const }, { type: "laya-local" as const }] };
+  it("combines several deciders with the configured strategy", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      deciders: [{ type: "laya-local" as const }, { type: "jev" as const }],
+      strategy: { ...DEFAULT_CONFIG.strategy, mode: "parallel" as const },
+    };
 
     const { decider, notes } = createDecider(config, { env: {}, layaStatus: layaOk });
 
-    expect(decider).toBeInstanceOf(JevDecider);
-    expect(notes).toEqual(["only the first decider (jev) is used for now; the others are ignored"]);
+    expect(decider).toBeInstanceOf(StrategyDecider);
+    expect(decider.id).toBe("parallel(laya-local,jev)");
+    expect(notes).toEqual([]);
   });
 });
 

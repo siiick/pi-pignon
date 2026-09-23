@@ -7,7 +7,7 @@
  * `RoutingDecision`.
  */
 
-import type { LayaQuestion } from "../types.js";
+import type { DeciderAttempt, LayaQuestion } from "../types.js";
 
 /** What a decider is asked about one prompt. */
 export interface DecisionRequest {
@@ -36,6 +36,10 @@ export interface DeciderResult {
   latencyMs: number;
   /** Price of the call in USD, for remote deciders that report it. */
   costUsd?: number;
+  /** Whether the prompt left the machine for this call. Defaults to `Decider.remote`. */
+  remote?: boolean;
+  /** Each decider tried, when several were (see `strategy.ts`). */
+  attempts?: DeciderAttempt[];
 }
 
 export interface Decider {

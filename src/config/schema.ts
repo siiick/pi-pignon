@@ -134,11 +134,36 @@ export const DecidersSchema = Type.Array(Type.Union([LayaLocalDeciderSchema, Jev
   description: "Decision models, in the order to try them. Default: laya-local when its worker is installed, else jev when TYPESAFE_API_KEY is set.",
 });
 
+export const StrategySchema = Type.Object(
+  {
+    mode: Type.Optional(
+      Type.Enum(["sequential", "parallel"], {
+        description:
+          "`sequential` (default): ask the deciders in order until one is confident enough. `parallel`: ask them all at once, e.g. to compare them.",
+      }),
+    ),
+    escalateBelow: Type.Optional(
+      Type.Number({ minimum: 0, maximum: 1, description: "Sequential: ask the next decider when tier confidence is below this. Default 0.75." }),
+    ),
+    pick: Type.Optional(
+      Type.Enum(["most-confident", "first"], {
+        description:
+          "Parallel: route on the most confident answer (default), or on the first decider in the list that answered (the others are only recorded).",
+      }),
+    ),
+    budgetMs: Type.Optional(
+      Type.Number({ exclusiveMinimum: 0, description: "Wall-time limit for one decision, all deciders included. Default 3000." }),
+    ),
+  },
+  { additionalProperties: false, description: "How several deciders are combined." },
+);
+
 export const ConfigFileSchema = Type.Object(
   {
     $schema: Type.Optional(Type.String()),
     version: Type.Optional(Type.Literal(2, { description: "Config format version." })),
     deciders: Type.Optional(DecidersSchema),
+    strategy: Type.Optional(StrategySchema),
     models: Type.Optional(
       Type.Record(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }), ModelSpecSchema, {
         description: "Named models, referenced from `tiers`. Merged over the built-in names (fast, balanced, reasoner, agent).",

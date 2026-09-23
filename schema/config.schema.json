@@ -80,6 +80,38 @@
       "maxItems": 4,
       "description": "Decision models, in the order to try them. Default: laya-local when its worker is installed, else jev when TYPESAFE_API_KEY is set."
     },
+    "strategy": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "sequential",
+            "parallel"
+          ],
+          "description": "`sequential` (default): ask the deciders in order until one is confident enough. `parallel`: ask them all at once, e.g. to compare them."
+        },
+        "escalateBelow": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Sequential: ask the next decider when tier confidence is below this. Default 0.75."
+        },
+        "pick": {
+          "enum": [
+            "most-confident",
+            "first"
+          ],
+          "description": "Parallel: route on the most confident answer (default), or on the first decider in the list that answered (the others are only recorded)."
+        },
+        "budgetMs": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Wall-time limit for one decision, all deciders included. Default 3000."
+        }
+      },
+      "additionalProperties": false,
+      "description": "How several deciders are combined."
+    },
     "models": {
       "type": "object",
       "patternProperties": {

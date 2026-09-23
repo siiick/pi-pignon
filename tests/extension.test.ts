@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import layaRouterExtension from "../src/extension.js";
 
@@ -182,6 +185,61 @@ describe("pignon-stats command", () => {
       "pignon-stats",
       expect.arrayContaining([expect.stringContaining("2 decisions")]),
     );
+  });
+});
+
+describe("pignon-stats compare and export", () => {
+  const attempt = (decider: string, tier: string, used: boolean) => ({
+    decider, remote: decider === "jev", outcome: "answered", used, tier, tierConfidence: 0.9, needsExploration: false, latencyMs: 5,
+  });
+  const entries = [
+    {
+      type: "custom",
+      customType: "pignon-decision",
+      data: { tier: "hard", form: "direct", applied: false, attempts: [attempt("laya-local", "standard", false), attempt("jev", "hard", true)] },
+    },
+  ];
+
+  it("shows the comparison widget", async () => {
+    const { pi, commands } = createMockPi();
+    layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+    const ctx = createMockContext();
+    ctx.sessionManager.getEntries = vi.fn().mockReturnValue(entries);
+
+    await commands.get("pignon-stats")!.handler("compare", ctx);
+
+    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
+      "pignon-stats",
+      expect.arrayContaining(["pignon compare — laya-local vs jev · 1 decisions answered by both"]),
+    );
+  });
+
+  it("explains how to get data to compare", async () => {
+    const { pi, commands } = createMockPi();
+    layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+    const ctx = createMockContext();
+    ctx.sessionManager.getEntries = vi.fn().mockReturnValue([{ type: "custom", customType: "pignon-decision", data: { tier: "hard" } }]);
+
+    await commands.get("pignon-stats")!.handler("compare", ctx);
+
+    expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("set strategy.mode to parallel"), "info");
+  });
+
+  it("exports the session's decisions to the given path", async () => {
+    const { pi, commands } = createMockPi();
+    layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
+    const ctx = createMockContext();
+    ctx.sessionManager.getEntries = vi.fn().mockReturnValue(entries);
+    const dir = mkdtempSync(join(tmpdir(), "pignon-stats-"));
+    const path = join(dir, "decisions.jsonl");
+    try {
+      await commands.get("pignon-stats")!.handler(`export ${path}`, ctx);
+
+      expect(ctx.ui.notify).toHaveBeenCalledWith(`pignon: wrote 1 decisions to ${path}`, "info");
+      expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(entries[0]!.data);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
