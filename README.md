@@ -1,4 +1,4 @@
-# pignon <img src="https://www.realclipart.com/png/small/61-613325_gears-clipart-transparent-gear-3d-icon.png" alt="Gears Clipart Transparent - Gear 3d Icon @realclipart.com">
+# <img src="docs/assets/pignon.svg" width="40" height="40" alt="" align="top"> pignon
 
 Pi agent extension that shifts to the right LLM for each prompt, the way a
 bike changes sprocket (*pignon*): a small **decision model** judges how hard
