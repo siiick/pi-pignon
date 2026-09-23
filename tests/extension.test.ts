@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import layaRouterExtension from "../src/extension.js";
+import { fakeCustom } from "./helpers/fake-report.js";
 
 // ---------------------------------------------------------------------------
 // Minimal Pi ExtensionAPI mock
@@ -34,7 +35,11 @@ function createMockContext(overrides?: {
   tokens?: number;
   hasUI?: boolean;
 }) {
+  const { custom, reports } = fakeCustom();
   return {
+    /** Report overlays opened through ctx.ui.custom. */
+    reports,
+    mode: "tui",
     hasUI: overrides?.hasUI ?? true,
     model: overrides?.modelId ? { id: overrides.modelId } : undefined,
     modelRegistry: {
@@ -45,6 +50,7 @@ function createMockContext(overrides?: {
       notify: vi.fn(),
       setStatus: vi.fn(),
       setWidget: vi.fn(),
+      custom,
     },
     sessionManager: {
       getEntries: vi.fn().mockReturnValue([]),
@@ -152,7 +158,7 @@ describe("pignon-stats command", () => {
     expect(ctx.ui.notify).toHaveBeenCalledWith("pignon: no decisions in this session", "info");
   });
 
-  it("clears widget when called with 'clear'", async () => {
+  it("still clears a widget left by an older version with 'clear'", async () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
@@ -163,7 +169,7 @@ describe("pignon-stats command", () => {
     expect(ctx.ui.setWidget).toHaveBeenCalledWith("pignon-stats", undefined);
   });
 
-  it("renders stats widget when entries exist", async () => {
+  it("shows the stats report when entries exist", async () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
 
@@ -181,10 +187,9 @@ describe("pignon-stats command", () => {
     const cmd = commands.get("pignon-stats")!;
     await cmd.handler("", ctx);
 
-    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
-      "pignon-stats",
-      expect.arrayContaining([expect.stringContaining("2 decisions")]),
-    );
+    expect(ctx.reports).toHaveLength(1);
+    expect(ctx.reports[0]!.title).toContain("2 decisions");
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
   });
 });
 
@@ -200,7 +205,7 @@ describe("pignon-stats compare and export", () => {
     },
   ];
 
-  it("shows the comparison widget", async () => {
+  it("shows the comparison report", async () => {
     const { pi, commands } = createMockPi();
     layaRouterExtension(pi as unknown as import("@earendil-works/pi-coding-agent").ExtensionAPI);
     const ctx = createMockContext();
@@ -208,10 +213,7 @@ describe("pignon-stats compare and export", () => {
 
     await commands.get("pignon-stats")!.handler("compare", ctx);
 
-    expect(ctx.ui.setWidget).toHaveBeenCalledWith(
-      "pignon-stats",
-      expect.arrayContaining(["pignon compare — laya-local vs jev · 1 decisions answered by both"]),
-    );
+    expect(ctx.reports[0]!.title).toBe("pignon compare — laya-local vs jev · 1 decisions answered by both");
   });
 
   it("explains how to get data to compare", async () => {

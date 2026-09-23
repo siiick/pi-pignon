@@ -86,7 +86,6 @@ export function buildCompareLines(rows: RouterLogEntry[], table: RoutingTable): 
     row("failures", "failures"),
     row("cost", "cost"),
     row("routed on", "used"),
-    "(/pignon-stats clear to hide)",
   ];
 }
 

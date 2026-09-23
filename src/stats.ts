@@ -51,6 +51,5 @@ export function buildStatsLines(rows: RouterLogEntry[], table: RoutingTable = DE
             (cost > 0 ? ` · cost $${cost.toFixed(5)}` : ""),
         ]
       : []),
-    `(/pignon-stats clear to hide)`,
   ];
 }

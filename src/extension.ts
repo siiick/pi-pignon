@@ -10,14 +10,17 @@
  *   /pignon shadow         -> observe only (default)
  *   /pignon off            -> stop calling the decider
  *   /pignon unpin          -> re-enable routing after manual model selection
- *   /pignon log [clear]    -> recent decider diagnostics
- *   /pignon config [clear] -> routing table and settings in use
+ *   /pignon log            -> recent decider diagnostics
+ *   /pignon config         -> routing table and settings in use
  *   /pignon config migrate -> convert a laya-router config file
  *   /pignon init [preset]  -> write a starter config file
- *   /pignon doctor [clear] -> check deciders, models and config
- *   /pignon-stats [clear]  -> session statistics
+ *   /pignon doctor         -> check deciders, models and config
+ *   /pignon-stats          -> session statistics
  *   /pignon-stats compare  -> how two deciders agree (parallel strategy)
  *   /pignon-stats export [path] -> decisions as JSON lines
+ *
+ * Reports open in a dismissible overlay (see `report.ts`). The `clear`
+ * subcommands are still accepted and remove the widgets older versions left.
  *
  * `/laya` and `/laya-stats` remain as aliases for one release.
  *
@@ -39,6 +42,7 @@ import { PRESETS, PRESET_NAMES, isPresetName } from "./config/presets.js";
 import { createDecider as createConfiguredDecider } from "./deciders/create.js";
 import type { Decider } from "./deciders/types.js";
 import { type RouterHost, routePrompt } from "./router.js";
+import { showReport } from "./report.js";
 import { buildStatsLines } from "./stats.js";
 import type { DeciderSpec, RouterConfig, RouterLogEntry, RouterMode } from "./types.js";
 import { hideDeciding, renderDecisionCard, showDeciding } from "./ui.js";
@@ -52,8 +56,8 @@ import {
   writeStarterConfig,
 } from "./onboarding.js";
 
-/** Decider log lines shown by `/pignon log`. */
-const LOG_WIDGET_LINES = 30;
+/** Decider log lines shown by `/pignon log` (the report scrolls). */
+const LOG_REPORT_LINES = 200;
 
 /** Custom entry type of decision cards. */
 const ENTRY_TYPE = "pignon-decision";
@@ -66,14 +70,11 @@ const SUBCOMMANDS = [
   "off",
   "unpin",
   "log",
-  "log clear",
   "config",
-  "config clear",
   "config migrate",
   "init",
   ...PRESET_NAMES.map((name) => `init ${name}`),
   "doctor",
-  "doctor clear",
 ];
 
 type PiModel = Parameters<ExtensionAPI["setModel"]>[0];
@@ -90,8 +91,14 @@ function notify(ctx: ExtensionContext, text: string, level: "info" | "warning" |
   if (ctx.hasUI) ctx.ui.notify(text, level);
 }
 
-function showWidget(ctx: ExtensionContext, name: string, lines: string[] | undefined): void {
-  if (ctx.hasUI) ctx.ui.setWidget(name, lines);
+/** Remove a report widget left by an older pignon (reports now use an overlay). */
+function clearWidget(ctx: ExtensionContext, name: string): void {
+  if (ctx.hasUI) ctx.ui.setWidget(name, undefined);
+}
+
+/** Show report lines whose first line is their title. */
+function showTitledReport(ctx: ExtensionContext, [title = "pignon", ...body]: string[]): Promise<void> {
+  return showReport(ctx, title, body);
 }
 
 /** Adapt Pi's API and a context to what the router needs. */
@@ -273,24 +280,24 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     const modeCommand = async (args: string, ctx: ExtensionContext) => {
       const arg = args.trim();
       if (arg === "log clear") {
-        showWidget(ctx, "pignon-log", undefined);
+        clearWidget(ctx, "pignon-log");
         return;
       }
       if (arg === "log") {
-        const lines = decider.recentLogs.slice(-LOG_WIDGET_LINES);
+        const lines = decider.recentLogs.slice(-LOG_REPORT_LINES);
         if (lines.length === 0) {
           notify(ctx, "pignon: no decider output yet");
           return;
         }
-        showWidget(ctx, "pignon-log", [...lines, "(/pignon log clear to hide)"]);
+        await showReport(ctx, "pignon log", lines);
         return;
       }
       if (arg === "config clear") {
-        showWidget(ctx, "pignon-config", undefined);
+        clearWidget(ctx, "pignon-config");
         return;
       }
       if (arg === "config") {
-        showWidget(ctx, "pignon-config", describeConfig(config, loaded.source));
+        await showTitledReport(ctx, describeConfig(config, loaded.source));
         return;
       }
       if (arg === "init" || arg.startsWith("init ")) {
@@ -315,19 +322,19 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
         return;
       }
       if (arg === "doctor clear") {
-        showWidget(ctx, "pignon-doctor", undefined);
+        clearWidget(ctx, "pignon-doctor");
         return;
       }
       if (arg === "doctor") {
-        showWidget(ctx, "pignon-doctor", ["pignon doctor", "  running checks…"]);
-        const lines = await runDoctor({
+        const report = runDoctor({
           config,
           configSource: loaded.source,
           configErrors: loaded.errors,
           decider,
           lookup: ctx.modelRegistry as ModelLookup<unknown>,
         });
-        showWidget(ctx, "pignon-doctor", [...lines, "(/pignon doctor clear to hide)"]);
+        // The overlay opens at once; the decider probe can take seconds.
+        await showReport(ctx, "pignon doctor", report.then(([, ...body]) => body));
         return;
       }
       if (arg === "config migrate") {
@@ -365,7 +372,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
     const statsCommand = async (args: string, ctx: ExtensionContext) => {
       const [sub = "", ...rest] = args.trim().split(/\s+/);
       if (sub === "clear") {
-        showWidget(ctx, "pignon-stats", undefined);
+        clearWidget(ctx, "pignon-stats");
         return;
       }
 
@@ -382,7 +389,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
 
       if (sub === "compare") {
         const lines = buildCompareLines(rows, config.table);
-        if (lines) showWidget(ctx, "pignon-stats", lines);
+        if (lines) await showTitledReport(ctx, lines);
         else notify(ctx, "pignon: no decisions answered by two deciders yet (set strategy.mode to parallel to compare them)");
         return;
       }
@@ -397,7 +404,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
         return;
       }
 
-      showWidget(ctx, "pignon-stats", buildStatsLines(rows, config.table));
+      await showTitledReport(ctx, buildStatsLines(rows, config.table));
     };
 
     const completions = (prefix: string) =>
@@ -409,7 +416,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       handler: modeCommand,
     });
     const statsCompletions = (prefix: string) =>
-      ["clear", "compare", "export"].filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
+      ["compare", "export"].filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
 
     pi.registerCommand("pignon-stats", {
       description: "Session statistics (compare: decider vs decider · export [path]: JSON lines)",

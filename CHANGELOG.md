@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- `/pignon log`, `config`, `doctor` and `/pignon-stats` (and `compare`) open in
+  a scrollable overlay that closes with Esc. They used to render in a widget,
+  which Pi cuts at 10 lines (doctor lost its model checks) and which stayed
+  above the editor until `… clear`. `doctor` opens at once and fills in when
+  its checks finish. The `clear` subcommands are still accepted but no longer
+  offered.
+- `/pignon log` shows the last 200 decider lines instead of 30.
+
 ## 0.1.0 — 2026-09-23
 
 First release as **pignon** (formerly laya-llm-router, a local-only prototype).

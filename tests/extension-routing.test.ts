@@ -8,6 +8,7 @@ import { createExtension } from "../src/extension.js";
 import { hashPrompt } from "../src/router.js";
 import { buildStatsLines } from "../src/stats.js";
 import type { Price, RouterLogEntry, RoutingDecision } from "../src/types.js";
+import { fakeCustom } from "./helpers/fake-report.js";
 
 // ---------------------------------------------------------------------------
 // Decider fake: the routing tests script decisions through workerDecide.
@@ -72,13 +73,15 @@ function setup(initial: Model, options: SetupOptions = {}) {
   const events = new Map<string, Handler[]>();
   const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
 
+  const { custom, reports } = fakeCustom();
   const ctx = {
+    mode: options.hasUI === false ? "print" : "tui",
     hasUI: options.hasUI ?? true,
     model: initialModel as Model | undefined,
     signal: undefined,
     modelRegistry: { find: vi.fn(withCost), hasConfiguredAuth: vi.fn(() => true) },
     getContextUsage: vi.fn().mockReturnValue({ tokens: options.contextTokens ?? 0 }),
-    ui: { notify: vi.fn(), setStatus: vi.fn(), setWidget: vi.fn() },
+    ui: { notify: vi.fn(), setStatus: vi.fn(), setWidget: vi.fn(), custom },
     sessionManager: { getEntries: vi.fn().mockReturnValue([]) },
   };
 
@@ -115,7 +118,7 @@ function setup(initial: Model, options: SetupOptions = {}) {
 
   const lastEntry = () => pi.appendEntry.mock.calls.at(-1)![1] as RouterLogEntry;
 
-  return { pi, ctx, emit, prompt, command, lastEntry };
+  return { pi, ctx, emit, prompt, command, lastEntry, reports };
 }
 
 const decision = (overrides: Partial<RoutingDecision>): RoutingDecision => ({
@@ -219,17 +222,16 @@ describe("worker not ready", () => {
 });
 
 describe("/pignon log", () => {
-  it("shows the most recent worker output in a widget", async () => {
-    workerState.logs = Array.from({ length: 40 }, (_, i) => `line ${i}`);
-    const { ctx, command } = setup(GLM);
+  it("shows the most recent worker output in a report, not a widget", async () => {
+    workerState.logs = Array.from({ length: 250 }, (_, i) => `line ${i}`);
+    const { ctx, command, reports } = setup(GLM);
 
     await command("pignon", "log");
 
-    const [name, lines] = ctx.ui.setWidget.mock.calls[0] as [string, string[]];
-    expect(name).toBe("pignon-log");
-    expect(lines[0]).toBe("line 10");
-    expect(lines).toContain("line 39");
-    expect(lines.at(-1)).toContain("/pignon log clear");
+    expect(reports[0]!.title).toBe("pignon log");
+    expect(reports[0]!.lines[0]).toBe("line 50");
+    expect(reports[0]!.lines.at(-1)).toBe("line 249");
+    expect(ctx.ui.setWidget).not.toHaveBeenCalled();
   });
 
   it("says so when the worker has not written anything", async () => {
@@ -241,7 +243,7 @@ describe("/pignon log", () => {
     expect(ctx.ui.setWidget).not.toHaveBeenCalled();
   });
 
-  it("hides the widget with 'log clear'", async () => {
+  it("still clears a widget left by an older version with 'log clear'", async () => {
     const { ctx, command } = setup(GLM);
 
     await command("pignon", "log clear");
@@ -410,14 +412,12 @@ describe("config file", () => {
   it(
     "shows the table in use with /pignon config",
     withConfig(JSON.stringify({ questions: { version: "q9" } }), async () => {
-      const { ctx, command } = setup(GLM);
+      const { command, reports } = setup(GLM);
 
       await command("pignon", "config");
 
-      const [name, lines] = ctx.ui.setWidget.mock.calls[0] as [string, string[]];
-      expect(name).toBe("pignon-config");
-      expect(lines[0]).toContain("pignon.json");
-      expect(lines).toContain("  questions q9 · confidence reported");
+      expect(reports[0]!.title).toContain("pignon.json");
+      expect(reports[0]!.lines).toContain("  questions q9 · confidence reported");
     }),
   );
 
@@ -462,18 +462,21 @@ describe("config file", () => {
   );
 
   it(
-    "shows the doctor report in a widget",
+    "opens the doctor report at once and fills it when the checks finish",
     withConfig("{}", async () => {
-      const { ctx, command } = setup(GLM);
-      workerDecide.mockResolvedValueOnce(decision({}));
+      const { ctx, command, reports } = setup(GLM);
+      let answer!: (d: RoutingDecision) => void;
+      workerDecide.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
 
-      await command("pignon", "doctor");
+      const done = command("pignon", "doctor");
+      await vi.waitFor(() => expect(reports).toHaveLength(1));
+      expect(reports[0]!.title).toBe("pignon doctor");
+      expect(reports[0]!.lines).toEqual(["  running checks…"]);
 
-      const [name, lines] = ctx.ui.setWidget.mock.calls.at(-1) as [string, string[]];
-      expect(name).toBe("pignon-doctor");
-      expect(lines[0]).toBe("pignon doctor");
-      expect(lines).toContain("  ✓ fake: stub answered a test prompt in 10 ms");
-      expect(lines.at(-1)).toBe("(/pignon doctor clear to hide)");
+      answer(decision({}));
+      await done;
+      await vi.waitFor(() => expect(reports[0]!.lines).toContain("  ✓ fake: stub answered a test prompt in 10 ms"));
+      expect(ctx.ui.setWidget).not.toHaveBeenCalled();
     }),
   );
 

@@ -1,5 +1,5 @@
 /**
- * `/pignon config`: the routing table and settings in use, as widget lines.
+ * `/pignon config`: the routing table and settings in use, as report lines.
  */
 
 import type { ModelSpec, RouterConfig } from "../types.js";
@@ -26,6 +26,5 @@ export function describeConfig(config: RouterConfig, source: string | null): str
     line(["tier", "direct", "exploration"]),
     ...rows.map(line),
     `  questions ${config.questions.version} · confidence ${config.confidenceSource}`,
-    "(/pignon config clear to hide)",
   ];
 }

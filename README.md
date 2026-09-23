@@ -114,17 +114,18 @@ explicitly; see [Presets](#presets). `init` never replaces an existing file.
 | `/pignon off` | Disable routing |
 | `/pignon unpin` | Re-enable routing after manual model selection |
 | `/pignon log` | Show recent decider output (load progress, warnings, tracebacks) |
-| `/pignon log clear` | Hide the log widget |
 | `/pignon config` | Show the routing table and settings in use |
-| `/pignon config clear` | Hide the config widget |
 | `/pignon config migrate` | Convert a laya-router config file to the pignon format |
 | `/pignon init [preset]` | Write a starter `pignon.json`: the preset's models (by default the one whose models Pi can use) and the deciders that can run here |
 | `/pignon doctor` | Check the config, each decider (one real test decision; for Jev that sends a fixed test prompt) and each model of the table (known to Pi, credentials set) |
-| `/pignon doctor clear` | Hide the doctor widget |
 | `/pignon-stats` | Show tier × form × confidence histogram for the session |
 | `/pignon-stats compare` | Compare two deciders over the decisions both answered (see [Using several deciders](#using-several-deciders)) |
 | `/pignon-stats export [path]` | Write the session's decisions as JSON lines (default `~/.pi/agent/pignon-exports/`); prompts are stored as hashes, never text |
-| `/pignon-stats clear` | Hide the stats widget |
+
+`log`, `config`, `doctor` and the stats reports open in a scrollable overlay:
+↑↓, PgUp/PgDn, Home/End to scroll, Esc (or `q`, Enter) to close. Nothing stays
+above the editor afterwards. The older `clear` subcommands still work and remove
+a widget left by a previous version.
 
 `/laya` and `/laya-stats` still work as aliases of `/pignon` and `/pignon-stats`;
 they will be removed in a later release.
@@ -418,7 +419,7 @@ pignon/
 │   │   ├── presets.ts       # Model presets (openrouter, anthropic, openai)
 │   │   ├── load.ts          # Read, validate and resolve the config file
 │   │   ├── migrate.ts       # /pignon config migrate (laya-router -> pignon)
-│   │   └── describe.ts      # /pignon config widget
+│   │   └── describe.ts      # /pignon config report
 │   ├── deciders/
 │   │   ├── types.ts         # Decider interface: the seam between router and classifier
 │   │   ├── questions.ts     # The tier and exploration questions sent to every decider
