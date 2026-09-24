@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 
 import { type PresetName, PRESETS, PRESET_NAMES } from "./config/presets.js";
 import { CONFIG_SCHEMA_URL } from "./config/schema.js";
+import { type StoredKey, TYPESAFE_CREDENTIAL, credentialsPath, readStoredKey } from "./credentials.js";
 import { DEFAULT_API_KEY_ENV } from "./deciders/jev.js";
 import { type WorkerLaunch, layaRuntimeStatus } from "./deciders/laya-local.js";
 import { probeLayaServe } from "./deciders/laya-serve.js";
@@ -49,16 +50,17 @@ export function choosePreset<M>(lookup: ModelLookup<M>): PresetName {
 /**
  * The decider to start with, local first: a running laya-serve on its default
  * address, else the experimental worker when installed, else Jev when its key
- * is set.
+ * is set or saved by `/pignon login`.
  */
 export async function detectDeciders(
   env: NodeJS.ProcessEnv = process.env,
   layaStatus: typeof layaRuntimeStatus = layaRuntimeStatus,
   probe: () => Promise<boolean> = () => probeLayaServe(),
+  storedKey: (name: string) => StoredKey = (name) => readStoredKey(name, credentialsPath(env)),
 ): Promise<DeciderSpec[]> {
   if (await probe()) return [{ type: "laya-serve" }];
   if (layaStatus(env).ok) return [{ type: "laya-local" }];
-  if (env[DEFAULT_API_KEY_ENV]?.trim()) return [{ type: "jev" }];
+  if (env[DEFAULT_API_KEY_ENV]?.trim() || storedKey(TYPESAFE_CREDENTIAL).kind !== "missing") return [{ type: "jev" }];
   return [];
 }
 

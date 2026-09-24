@@ -38,12 +38,25 @@ pi install npm:pi-pignon
 ```
 
 `pi update --extensions` keeps it up to date. To pin a version:
-`pi install npm:pi-pignon@0.1.1`. To try unreleased changes:
+`pi install npm:pi-pignon@0.1.3`. To try unreleased changes:
 `pi install git:github.com/siiick/pi-pignon`.
 
-### 1. Give it a decision model
+### Choosing a decider
 
-pignon needs a local **Laya server**, a **Jev API key**, or both.
+pignon needs a decision model: a local **Laya server**, **TypeSafe's Jev**, or both.
+
+| | Laya (`laya-serve`) | Jev |
+|---|---|---|
+| Runs | On your machine (NVIDIA GPU, Apple Silicon or CPU) | TypeSafe's API |
+| Latency | ~75 ms on Apple Silicon | ~70–500 ms |
+| Cost | Free | Paid per decision; shown on each card and in `/pignon-stats` |
+| Privacy | Prompts stay on your machine | The first 4 000 characters of each routed prompt are sent to TypeSafe |
+| Setup | Install and run a server | An API key |
+
+**Both:** Laya first, and Jev only when Laya is down or unsure, with the
+[`sequential` strategy](docs/CONFIGURATION.md#using-several-deciders).
+
+### 1. Start Laya, or save a Jev key
 
 **Local: Laya with `laya-serve`**
 
@@ -55,34 +68,55 @@ LAYA_HOST=127.0.0.1 laya-serve  # http://127.0.0.1:8000
 - Always set `LAYA_HOST=127.0.0.1` (default listens on all interfaces)
 - Loads the best available device (NVIDIA GPU → Apple Silicon → CPU)
 - First start downloads checkpoints and may take a while; later starts take 2–3 s
-- While loading or down, prompts are **not routed** — they keep the current model
+- While loading or down, prompts are **not routed**: they keep the current model
+- To start it at login on macOS, see [the launchd recipe](docs/CONFIGURATION.md#start-laya-serve-at-login-macos)
 
 **Remote: Jev**
 
-Get a key from [TypeSafe](https://typesafe.ai) and export it:
+Get a key from [TypeSafe](https://typesafe.ai), start `pi`, and run:
 
 ```bash
-export TYPESAFE_API_KEY="sk-..."
+/pignon login
 ```
 
-To use OpenRouter instead, see the [configuration reference](docs/CONFIGURATION.md#deciders).
+Pick where the key comes from:
 
-### 2. Restart Pi
+- **A command** that prints it, e.g. `security find-generic-password -ws typesafe`
+  (macOS Keychain) or `op read op://Private/TypeSafe/credential` (1Password).
+  pignon runs it once per session; the key is never written to disk. Recommended.
+- **Paste the key.** It is saved in `~/.pi/agent/pignon/credentials.json`, which
+  only you can read. pignon refuses the file if other users can read it.
+
+`/pignon logout` removes the saved key. In CI, or if you prefer, export
+`TYPESAFE_API_KEY` before starting Pi instead; it takes precedence over a saved
+key. To reach Jev through OpenRouter, see
+[the configuration reference](docs/CONFIGURATION.md#jev-through-openrouter).
+
+### 2. Initialize and check
+
+In Pi:
 
 ```bash
-pi    # or /reload
-```
-
-### 3. Initialize and go live
-
-```bash
-/pignon init          # writes ~/.pi/agent/pignon.json
-/pignon doctor        # checks config, deciders and models
-/pignon live          # start routing (default is shadow mode)
+/pignon init          # writes ~/.pi/agent/pignon.json with the deciders it finds
+/reload               # loads the config (and a key saved with /pignon login)
+/pignon doctor        # checks config, deciders and models, with one test decision
 ```
 
 `/pignon init anthropic` (or `openai`, `openrouter`) picks a preset explicitly.
 `init` never overwrites an existing file.
+
+`/pignon doctor` says what is wrong with a decider: laya-serve not running, no
+Jev key, a key rejected by the API, a key command that fails, or a credentials
+file others can read.
+
+### 3. Go live
+
+pignon starts in shadow mode: it shows what it would do on each prompt without
+switching models. When the decisions look right:
+
+```bash
+/pignon live
+```
 
 ## Commands
 
@@ -98,6 +132,7 @@ pi    # or /reload
 | `/pignon config migrate` | Convert a laya-router config to pignon format |
 | `/pignon init [preset]` | Write a starter `pignon.json` |
 | `/pignon doctor` | Check config, deciders and models |
+| `/pignon login` / `logout` | Save or remove the Jev API key |
 | `/pignon-stats` | Show tier × form × confidence histogram |
 | `/pignon-stats compare` | Compare two deciders side-by-side |
 | `/pignon-stats export [path]` | Export decisions as JSON lines |
@@ -154,7 +189,7 @@ Run `/pignon config` to see the resolved table currently in use.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIGNON_CONFIG` | `<Pi config dir>/pignon.json` | Config file path |
-| `TYPESAFE_API_KEY` | *(unset)* | Jev API key |
+| `TYPESAFE_API_KEY` | *(unset)* | Jev API key (instead of `/pignon login`) |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | Jev API root |
 | `LAYA_HOST`, `LAYA_PORT`, `LAYA_MODELS` | *(varies)* | `laya-serve` startup options |
 
@@ -165,6 +200,9 @@ Full list: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#environment-variables).
 - **Local prompts stay local.** With `laya-serve` on this machine, prompts never
   leave it. Jev (or remote laya-serve) receives the first 4 000 characters;
   cards are marked `☁`.
+- **Keys stay out of the config.** The Jev key comes from `TYPESAFE_API_KEY`
+  or `/pignon login`, never from `pignon.json`, and a saved key is only sent
+  to TypeSafe.
 - **Fail-open.** If a decider is unreachable or fails, the prompt is not routed
   and keeps the current model (a few milliseconds of delay).
 - **Switch cost.** Changing models discards the prompt cache. Downgrades must
@@ -187,7 +225,7 @@ pi install ./         # load the clone in place
 npm run typecheck     # Type check
 npm test              # Unit tests
 npm run test:worker   # Python worker tests
-npm run test:live     # Real decider calls (needs API key)
+npm run test:live     # Real decider calls (needs TYPESAFE_API_KEY and/or laya-serve)
 npm run schema        # Regenerate JSON Schema
 npm run check         # typecheck + tests + worker tests
 ```

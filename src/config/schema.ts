@@ -147,7 +147,7 @@ export const JevDeciderSchema = Type.Object(
       Type.String({ minLength: 1, description: "API root. `https://openrouter.ai/api` goes through OpenRouter. Default: TypeSafe." }),
     ),
     apiKeyEnv: Type.Optional(
-      Type.String({ minLength: 1, description: "Environment variable holding the API key. Default: TYPESAFE_API_KEY." }),
+      Type.String({ minLength: 1, description: "Environment variable holding the API key. Default: TYPESAFE_API_KEY, else the key saved with /pignon login (only when neither apiKeyEnv nor baseURL is set)." }),
     ),
     timeoutMs: timeoutMs("Timeout for one decision, in milliseconds. Default: 1500."),
     maxRetries: Type.Optional(Type.Integer({ minimum: 0, maximum: 3, description: "Retries after a failed attempt. Default: 0." })),
@@ -165,7 +165,7 @@ export const DecidersSchema = Type.Array(Type.Union([LayaServeDeciderSchema, Lay
   minItems: 1,
   maxItems: 4,
   description:
-    "Decision models, in the order to try them. Default: laya-local when its experimental worker is installed, else jev when TYPESAFE_API_KEY is set. /pignon init adds laya-serve when it is running.",
+    "Decision models, in the order to try them. Default: laya-local when its experimental worker is installed, else jev when TYPESAFE_API_KEY is set or a key was saved with /pignon login. /pignon init adds laya-serve when it is running.",
 });
 
 export const StrategySchema = Type.Object(

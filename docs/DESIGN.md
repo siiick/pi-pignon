@@ -4,6 +4,8 @@
 
 With `laya-serve` on this machine (`127.0.0.1` or `localhost`) or `laya-local`, prompts never leave it. With `jev`, or a laya-serve on another host, the first 4 000 characters of each routed prompt are sent over the network, and decision cards are marked ☁. The SDK's own logging is capped at `warn` and kept in `/pignon log`, so prompts are never logged, even with `TYPESAFE_LOG_LEVEL=debug`.
 
+The Jev key is never read from `pignon.json`, which people share. `/pignon login` saves it in its own file, `<Pi config dir>/pignon/credentials.json`, not in Pi's `auth.json`, which Pi writes under a lock extensions cannot take. The file is written 0600 in a 0700 directory, through a temporary file and a rename, and refused when group or others can read it. It can hold a `!command` instead of the key (Keychain, 1Password…), so the key never touches the disk; the command runs once per session, and its stderr is never shown, since it could echo the key. The environment variable takes precedence, and a saved key is only given to a `jev` decider on TypeSafe's own endpoint, never to a custom `baseURL`, a custom `apiKeyEnv`, or laya-serve.
+
 ## Fail-open
 
 If a decider cannot be reached or a decision fails, the decision is `null` and the extension keeps the current model. A laya-serve that is down refuses the connection at once, so the prompt waits a few milliseconds, not a timeout. The experimental worker loads its model in the background from `session_start`; prompts sent before it is ready are not routed (status shows `model loading — prompt not routed`) rather than held. It stays warm for the session, is reloaded in the background if it crashes, and is stopped on `session_shutdown`. A worker that is not ready within 5 minutes is killed.

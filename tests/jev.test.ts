@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { JevDecider } from "../src/deciders/jev.js";
@@ -96,6 +99,52 @@ describe("JevDecider errors", () => {
     expect(decider.isReady).toBe(false);
     await expect(decider.warmup()).rejects.toThrow("jev: MY_JEV_KEY is not set");
     await expect(decider.decide(request)).rejects.toThrow("jev: MY_JEV_KEY is not set");
+  });
+});
+
+describe("JevDecider with a key saved by /pignon login", () => {
+  it("uses it when the variable is unset, once warmed up", async () => {
+    const { fetch, calls } = fakeJevFetch({ kind: "answer" });
+    const decider = new JevDecider({ env: {}, fetch, storedKey: () => ({ kind: "ok", value: "sk-stored" }) });
+
+    expect(decider.isReady).toBe(false);
+    await decider.warmup();
+    expect(decider.isReady).toBe(true);
+    await decider.decide(request);
+    expect(calls[0]!.headers.authorization).toBe("Bearer sk-stored");
+  });
+
+  it("prefers the environment variable", async () => {
+    const { fetch, calls } = fakeJevFetch({ kind: "answer" });
+    const storedKey = vi.fn(() => ({ kind: "ok" as const, value: "sk-stored" }));
+    const decider = new JevDecider({ env: withKey, fetch, storedKey });
+
+    await decider.decide(request);
+    expect(calls[0]!.headers.authorization).toBe("Bearer sk-test");
+    expect(storedKey).not.toHaveBeenCalled();
+  });
+
+  it("runs a key command once, even when it fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pignon-jev-"));
+    const counter = join(dir, "runs");
+    const decider = new JevDecider({ env: {}, storedKey: () => ({ kind: "ok", value: `!echo x >> ${counter}; exit 3` }) });
+    try {
+      await expect(decider.warmup()).rejects.toThrow("jev: key command failed (exit 3); fix it with /pignon login, then /reload");
+      await expect(decider.warmup()).rejects.toThrow("key command failed");
+      expect(readFileSync(counter, "utf8")).toBe("x\n");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("says what is wrong with the credentials file", async () => {
+    const decider = new JevDecider({ env: {}, storedKey: () => ({ kind: "error", error: "credentials.json is not valid JSON" }) });
+    await expect(decider.warmup()).rejects.toThrow("jev: credentials.json is not valid JSON");
+  });
+
+  it("without any key, mentions /pignon login", async () => {
+    const decider = new JevDecider({ env: {}, storedKey: () => ({ kind: "missing" }) });
+    await expect(decider.warmup()).rejects.toThrow("jev: TYPESAFE_API_KEY is not set (or run /pignon login)");
   });
 });
 

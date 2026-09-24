@@ -27,7 +27,9 @@
     "src",
     "schema",
     "examples",
-    "docs",
+    "docs/CONFIGURATION.md",
+    "docs/DESIGN.md",
+    "docs/assets",
     "CHANGELOG.md"
   ],
   "engines": {

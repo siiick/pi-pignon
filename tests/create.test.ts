@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../src/config/defaults.js";
 import { UnavailableDecider, createDecider } from "../src/deciders/create.js";
@@ -11,6 +11,8 @@ import { StrategyDecider } from "../src/deciders/strategy.js";
 
 const layaOk = () => ({ ok: true as const });
 const layaMissing = () => ({ ok: false as const, reason: "the Laya worker is not installed" });
+const noStoredKey = () => ({ kind: "missing" as const });
+const storedKey = () => ({ kind: "ok" as const, value: "sk-stored" });
 
 describe("createDecider without a deciders section", () => {
   it("uses the local Laya worker when it can run", () => {
@@ -24,14 +26,48 @@ describe("createDecider without a deciders section", () => {
     expect(decider).toBeInstanceOf(JevDecider);
   });
 
+  it("falls back to Jev when Laya cannot run and a key was saved with /pignon login", async () => {
+    const { decider } = createDecider(DEFAULT_CONFIG, { env: {}, layaStatus: layaMissing, storedKey });
+    expect(decider).toBeInstanceOf(JevDecider);
+    await decider.warmup();
+    expect(decider.isReady).toBe(true);
+  });
+
   it("says what to install when neither can run", async () => {
-    const { decider } = createDecider(DEFAULT_CONFIG, { env: {}, layaStatus: layaMissing });
+    const { decider } = createDecider(DEFAULT_CONFIG, { env: {}, layaStatus: layaMissing, storedKey: noStoredKey });
 
     expect(decider).toBeInstanceOf(UnavailableDecider);
     expect(decider.isReady).toBe(false);
     await expect(decider.warmup()).rejects.toThrow(
-      "no decider configured: start laya-serve (see pignon's README) and run /pignon init, or set TYPESAFE_API_KEY for Jev",
+      "no decider configured: start laya-serve (see pignon's README) and run /pignon init, or run /pignon login (or set TYPESAFE_API_KEY) for Jev",
     );
+  });
+});
+
+describe("createDecider and the key saved by /pignon login", () => {
+  it("gives it to Jev on TypeSafe's endpoint", async () => {
+    const config = { ...DEFAULT_CONFIG, deciders: [{ type: "jev" as const }] };
+    const { decider } = createDecider(config, { env: {}, layaStatus: layaMissing, storedKey });
+    await expect(decider.warmup()).resolves.toBeUndefined();
+  });
+
+  it("never sends it to another endpoint or with another key variable", async () => {
+    for (const spec of [
+      { type: "jev" as const, baseURL: "https://openrouter.ai/api" },
+      { type: "jev" as const, apiKeyEnv: "OPENROUTER_API_KEY" },
+    ]) {
+      const config = { ...DEFAULT_CONFIG, deciders: [spec] };
+      const { decider } = createDecider(config, { env: {}, layaStatus: layaMissing, storedKey });
+      await expect(decider.warmup()).rejects.toThrow(/is not set$/);
+    }
+  });
+
+  it("never gives it to laya-serve", async () => {
+    const config = { ...DEFAULT_CONFIG, deciders: [{ type: "laya-serve" as const, apiKeyEnv: "LAYA_KEY" }] };
+    const read = vi.fn(storedKey);
+    const { decider } = createDecider(config, { env: {}, layaStatus: layaMissing, storedKey: read });
+    await decider.warmup();
+    expect(read).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,6 @@
 # Plan (pignon): pluggable deciders (local Laya + remote Jev) and a user-defined routing table
 
-Status: proposal · 2026-09-23
+Status: implemented in 0.1.0 · 2026-09-23
 
 ## Goals
 

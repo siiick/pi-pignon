@@ -28,6 +28,7 @@ import {
   TypeSafeError,
 } from "@typesafe-ai/sdk";
 
+import { type StoredKey, resolveStoredKey } from "../credentials.js";
 import type { LayaQuestion } from "../types.js";
 import { type Decider, type DeciderResult, type DecisionRequest, DeciderError } from "./types.js";
 
@@ -59,6 +60,12 @@ export interface JevDeciderOptions {
   timeoutMs?: number;
   /** Retries after a failed attempt. Each gets the full timeout. */
   maxRetries?: number;
+  /**
+   * The key saved by `/pignon login`, used when the environment variable is
+   * unset. Only for TypeSafe itself: never set it with another `baseURL` or
+   * `apiKeyEnv`, which would send the TypeSafe key elsewhere.
+   */
+  storedKey?: () => StoredKey;
   /** Where to read the API key and SDK settings. Defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
   /** HTTP implementation (tests). */
@@ -78,6 +85,8 @@ export class JevDecider implements Decider {
   private readonly timeoutMs: number;
   private readonly logLines: string[] = [];
   private client?: TypeSafeClient;
+  /** A stored key command runs once per session, failed or not: it may prompt the user. */
+  private storedKeyResolution?: Promise<string>;
   private lastModel?: string;
   private stopped = false;
 
@@ -89,9 +98,12 @@ export class JevDecider implements Decider {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_JEV_TIMEOUT_MS;
   }
 
-  /** Ready as soon as an API key is available (or none is needed); there is nothing to load. */
+  /**
+   * Ready as soon as an API key is available (or none is needed); there is
+   * nothing to load. A stored key is ready once `warmup` has resolved it.
+   */
   get isReady(): boolean {
-    return !this.stopped && (this.apiKey() !== undefined || this.options.requireApiKey === false);
+    return !this.stopped && (this.client !== undefined || this.envApiKey() !== undefined || this.options.requireApiKey === false);
   }
 
   /** The model that last answered, else the one requests will name. */
@@ -107,11 +119,11 @@ export class JevDecider implements Decider {
 
   /** Check the API key and build the client. No network call. */
   async warmup(): Promise<void> {
-    this.ensureClient();
+    await this.ensureClient();
   }
 
   async decide(request: DecisionRequest, signal?: AbortSignal): Promise<DeciderResult> {
-    const client = this.ensureClient();
+    const client = await this.ensureClient();
     const started = Date.now();
     try {
       const result = await client.systemOne(
@@ -147,16 +159,37 @@ export class JevDecider implements Decider {
     return this.options.env ?? process.env;
   }
 
-  private apiKey(): string | undefined {
+  private envApiKey(): string | undefined {
     const key = this.env()[this.apiKeyEnv]?.trim();
     return key ? key : undefined;
   }
 
-  private ensureClient(): TypeSafeClient {
+  /** The environment variable first (CI, existing setups), then the stored key. */
+  private async apiKey(): Promise<string | undefined> {
+    const fromEnv = this.envApiKey();
+    if (fromEnv || !this.options.storedKey) return fromEnv;
+    const stored = this.options.storedKey();
+    if (stored.kind === "missing") return undefined;
+    if (stored.kind === "error") throw new DeciderError(`${this.id}: ${stored.error}`);
+    this.storedKeyResolution ??= resolveStoredKey(stored.value);
+    try {
+      return await this.storedKeyResolution;
+    } catch (err) {
+      throw new DeciderError(`${this.id}: ${(err as Error).message}; fix it with /pignon login, then /reload`, err);
+    }
+  }
+
+  private async ensureClient(): Promise<TypeSafeClient> {
     if (this.stopped) throw new DeciderError(`${this.id}: decider is stopped`);
     if (this.client) return this.client;
-    const apiKey = this.apiKey() ?? (this.options.requireApiKey === false ? NO_API_KEY : undefined);
-    if (!apiKey) throw new DeciderError(`${this.id}: ${this.apiKeyEnv} is not set`);
+    const apiKey = (await this.apiKey()) ?? (this.options.requireApiKey === false ? NO_API_KEY : undefined);
+    if (!apiKey) {
+      const hint = this.options.storedKey ? ` (or run /pignon login)` : "";
+      throw new DeciderError(`${this.id}: ${this.apiKeyEnv} is not set${hint}`);
+    }
+    // The key may have taken a while to resolve.
+    if (this.stopped) throw new DeciderError(`${this.id}: decider is stopped`);
+    if (this.client) return this.client;
 
     const env = this.env();
     try {

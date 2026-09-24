@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- `/pignon login` saves the Jev (TypeSafe) API key, so you no longer have to
+  export `TYPESAFE_API_KEY`. It can store a command that prints the key
+  (Keychain, 1Password, …), so the key never touches the disk, or the key
+  itself in `~/.pi/agent/pignon/credentials.json` (0600; refused when others
+  can read it). The environment variable still wins. `/pignon logout` removes
+  the key. `/pignon init` and the no-config default pick Jev when a key was
+  saved.
+- README: a "Choosing a decider" comparison (latency, cost, privacy, setup),
+  setup steps in the order they run in Pi, and what `/pignon doctor` reports.
+  The configuration reference explains where Jev's key is looked up and how to
+  reach Jev through OpenRouter.
+- The internal `docs/PLAN-*.md` notes are no longer shipped in the package.
+
 ## 0.1.1 — 2026-09-23
 
 - Published on npm: `pi install npm:pi-pignon`.

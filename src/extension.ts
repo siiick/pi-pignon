@@ -1,9 +1,9 @@
 /**
  * pignon — Pi agent extension.
  *
- * Shifts to the right model for each prompt by asking a decider (today: the
- * local Laya System-1 model, via a stdio worker it spawns and supervises) how
- * hard the prompt is, then looking the answer up in the routing table.
+ * Shifts to the right model for each prompt by asking a decider (a local Laya
+ * model through laya-serve, TypeSafe's hosted Jev, or the experimental worker)
+ * how hard the prompt is, then looking the answer up in the routing table.
  *
  *   /pignon                -> show current mode
  *   /pignon live           -> apply decisions
@@ -15,6 +15,8 @@
  *   /pignon config migrate -> convert a laya-router config file
  *   /pignon init [preset]  -> write a starter config file
  *   /pignon doctor         -> check deciders, models and config
+ *   /pignon login          -> save the TypeSafe (Jev) API key
+ *   /pignon logout         -> remove it
  *   /pignon-stats          -> session statistics
  *   /pignon-stats compare  -> how two deciders agree (parallel strategy)
  *   /pignon-stats export [path] -> decisions as JSON lines
@@ -46,6 +48,7 @@ import { showReport } from "./report.js";
 import { buildStatsLines } from "./stats.js";
 import type { DeciderSpec, RouterConfig, RouterLogEntry, RouterMode } from "./types.js";
 import { hideDeciding, renderDecisionCard, showDeciding } from "./ui.js";
+import { login, logout } from "./login.js";
 import {
   type ModelLookup,
   choosePreset,
@@ -75,6 +78,8 @@ const SUBCOMMANDS = [
   "init",
   ...PRESET_NAMES.map((name) => `init ${name}`),
   "doctor",
+  "login",
+  "logout",
 ];
 
 type PiModel = Parameters<ExtensionAPI["setModel"]>[0];
@@ -337,6 +342,17 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
         await showReport(ctx, "pignon doctor", report.then(([, ...body]) => body));
         return;
       }
+      if (arg === "login") {
+        if (!ctx.hasUI) return;
+        const result = await login(ctx.ui);
+        if (result) notify(ctx, `pignon: ${result.message}`, result.level);
+        return;
+      }
+      if (arg === "logout") {
+        const result = logout();
+        notify(ctx, `pignon: ${result.message}`, result.level);
+        return;
+      }
       if (arg === "config migrate") {
         if (!loaded.legacy) {
           notify(ctx, "pignon: config is already in the pignon format");
@@ -411,7 +427,7 @@ export function createExtension(options: ExtensionOptions = {}): (pi: ExtensionA
       SUBCOMMANDS.filter((v) => v.startsWith(prefix)).map((v) => ({ value: v, label: v }));
 
     pi.registerCommand("pignon", {
-      description: "pignon mode (shadow | live | off | unpin | log | config)",
+      description: "pignon mode and setup (shadow | live | off | unpin | log | config | init | doctor | login | logout)",
       getArgumentCompletions: completions,
       handler: modeCommand,
     });

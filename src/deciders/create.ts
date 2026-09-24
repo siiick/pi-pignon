@@ -8,6 +8,7 @@
  * returns an `UnavailableDecider` whose warmup error says what to install.
  */
 
+import { type StoredKey, TYPESAFE_CREDENTIAL, credentialsPath, readStoredKey } from "../credentials.js";
 import type { DeciderSpec, RouterConfig } from "../types.js";
 import { DEFAULT_API_KEY_ENV, JevDecider } from "./jev.js";
 import { LayaWorker, layaRuntimeStatus } from "./laya-local.js";
@@ -26,10 +27,13 @@ export interface CreateDeciderDeps {
   env?: NodeJS.ProcessEnv;
   /** Whether the local worker can run here (tests replace the platform check). */
   layaStatus?: typeof layaRuntimeStatus;
+  /** Reads a key saved by `/pignon login`. Defaults to the credentials file. */
+  storedKey?: (name: string) => StoredKey;
 }
 
 export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}): CreatedDecider {
   const env = deps.env ?? process.env;
+  const storedKey = deps.storedKey ?? ((name: string) => readStoredKey(name, credentialsPath(env)));
   const notes: string[] = [];
   let specs = config.deciders;
 
@@ -37,19 +41,19 @@ export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}
     const laya = (deps.layaStatus ?? layaRuntimeStatus)(env);
     if (laya.ok) {
       specs = [{ type: "laya-local" }];
-    } else if (env[DEFAULT_API_KEY_ENV]?.trim()) {
+    } else if (env[DEFAULT_API_KEY_ENV]?.trim() || storedKey(TYPESAFE_CREDENTIAL).kind !== "missing") {
       specs = [{ type: "jev" }];
     } else {
       return {
         decider: new UnavailableDecider(
-          `no decider configured: start laya-serve (see pignon's README) and run /pignon init, or set ${DEFAULT_API_KEY_ENV} for Jev`,
+          `no decider configured: start laya-serve (see pignon's README) and run /pignon init, or run /pignon login (or set ${DEFAULT_API_KEY_ENV}) for Jev`,
         ),
         notes,
       };
     }
   }
 
-  const deciders = specs.map((spec) => build(spec, config, env));
+  const deciders = specs.map((spec) => build(spec, config, env, storedKey));
   if (deciders.length === 1) return { decider: deciders[0]!, notes };
   return {
     decider: new StrategyDecider(deciders, config.strategy, (answers, latencyMs) => parseDecision(answers, latencyMs, config)),
@@ -57,7 +61,7 @@ export function createDecider(config: RouterConfig, deps: CreateDeciderDeps = {}
   };
 }
 
-function build(spec: DeciderSpec, config: RouterConfig, env: NodeJS.ProcessEnv): Decider {
+function build(spec: DeciderSpec, config: RouterConfig, env: NodeJS.ProcessEnv, storedKey: (name: string) => StoredKey): Decider {
   switch (spec.type) {
     case "laya-serve":
       return createLayaServeDecider(spec, env);
@@ -69,6 +73,10 @@ function build(spec: DeciderSpec, config: RouterConfig, env: NodeJS.ProcessEnv):
     case "jev":
       return new JevDecider({
         env,
+        // The stored key is TypeSafe's: only for TypeSafe's own endpoint and variable.
+        ...(spec.apiKeyEnv === undefined && spec.baseURL === undefined
+          ? { storedKey: () => storedKey(TYPESAFE_CREDENTIAL) }
+          : {}),
         ...(spec.model !== undefined ? { model: spec.model } : {}),
         ...(spec.baseURL !== undefined ? { baseURL: spec.baseURL } : {}),
         ...(spec.apiKeyEnv !== undefined ? { apiKeyEnv: spec.apiKeyEnv } : {}),

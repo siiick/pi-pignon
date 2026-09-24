@@ -109,7 +109,7 @@
               "apiKeyEnv": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Environment variable holding the API key. Default: TYPESAFE_API_KEY."
+                "description": "Environment variable holding the API key. Default: TYPESAFE_API_KEY, else the key saved with /pignon login (only when neither apiKeyEnv nor baseURL is set)."
               },
               "timeoutMs": {
                 "type": "number",
@@ -129,7 +129,7 @@
       },
       "minItems": 1,
       "maxItems": 4,
-      "description": "Decision models, in the order to try them. Default: laya-local when its experimental worker is installed, else jev when TYPESAFE_API_KEY is set. /pignon init adds laya-serve when it is running."
+      "description": "Decision models, in the order to try them. Default: laya-local when its experimental worker is installed, else jev when TYPESAFE_API_KEY is set or a key was saved with /pignon login. /pignon init adds laya-serve when it is running."
     },
     "strategy": {
       "type": "object",

@@ -65,7 +65,10 @@ describe("init", () => {
     expect(await detectDeciders({ TYPESAFE_API_KEY: "k" }, ok, up)).toEqual([{ type: "laya-serve" }]);
     expect(await detectDeciders({}, ok, down)).toEqual([{ type: "laya-local" }]);
     expect(await detectDeciders({ TYPESAFE_API_KEY: "k" }, missing, down)).toEqual([{ type: "jev" }]);
-    expect(await detectDeciders({}, missing, down)).toEqual([]);
+    const none = () => ({ kind: "missing" as const });
+    const saved = () => ({ kind: "ok" as const, value: "sk" });
+    expect(await detectDeciders({}, missing, down, saved)).toEqual([{ type: "jev" }]);
+    expect(await detectDeciders({}, missing, down, none)).toEqual([]);
   });
 
   it("writes a laya-serve starter config that loads cleanly", () => {

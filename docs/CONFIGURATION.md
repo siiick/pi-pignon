@@ -18,8 +18,8 @@ Run `/pignon config` to see the resolved table currently in use.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PIGNON_CONFIG` | `<Pi config dir>/pignon.json` | Path of the optional config file |
-| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's config directory; pignon keeps its config and exports there |
-| `TYPESAFE_API_KEY` | *(unset)* | Jev API key (another variable can be named with `apiKeyEnv`) |
+| `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Pi's config directory; pignon keeps its config, exports and saved key (`pignon/credentials.json`) there |
+| `TYPESAFE_API_KEY` | *(unset)* | Jev API key (another variable can be named with `apiKeyEnv`). Takes precedence over a key saved with `/pignon login` |
 | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | Jev API root, when `baseURL` is not set |
 | `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Jev model, when `model` is not set |
 | `LAYA_ROUTER_CONFIG` | `~/.pi/agent/laya-router.json` | **Legacy:** read only when there is no pignon config |
@@ -28,7 +28,7 @@ laya-serve reads its own `LAYA_*` variables (`LAYA_HOST`, `LAYA_PORT`, `LAYA_MOD
 
 ## Deciders
 
-`deciders` picks the decision model. `/pignon init` writes it for you. Without it, pignon uses the experimental worker when installed, else Jev when `TYPESAFE_API_KEY` is set; it does not look for laya-serve on its own.
+`deciders` picks the decision model. `/pignon init` writes it for you. Without it, pignon uses the experimental worker when installed, else Jev when `TYPESAFE_API_KEY` is set or a key was saved with `/pignon login`; it does not look for laya-serve on its own.
 
 ```json
 {
@@ -46,10 +46,33 @@ laya-serve reads its own `LAYA_*` variables (`LAYA_HOST`, `LAYA_PORT`, `LAYA_MOD
 | | `timeoutMs` | `1500` | Timeout for one decision |
 | `laya-local` | | | [Experimental worker](#experimental-pignons-mlx-worker), see its section |
 | `jev` | `model` | `jev-latest` | Jev version to pin. Confidences are calibrated per version, so pinning keeps your thresholds valid |
-| | `apiKeyEnv` | `TYPESAFE_API_KEY` | Environment variable holding the key. Keys are never read from the config file |
-| | `baseURL` | TypeSafe | `https://openrouter.ai/api` to go through OpenRouter (with `"apiKeyEnv": "OPENROUTER_API_KEY"`) |
+| | `apiKeyEnv` | `TYPESAFE_API_KEY` | Environment variable holding the key. When it is unset, the key saved with `/pignon login` is used, but only when neither `apiKeyEnv` nor `baseURL` is set, so the TypeSafe key never goes elsewhere. Keys are never read from the config file |
+| | `baseURL` | TypeSafe | Another API root, e.g. [OpenRouter](#jev-through-openrouter) |
 | | `timeoutMs` | `1500` | Timeout for one decision |
 | | `maxRetries` | `0` | Retries after a failed call; each gets the full timeout |
+
+### Jev's API key
+
+pignon looks for the key in this order:
+
+1. the environment variable named by `apiKeyEnv` (`TYPESAFE_API_KEY` by default);
+2. the key saved with `/pignon login`, in `<Pi config dir>/pignon/credentials.json`: either the key itself, or a `!command` that prints it (run once per session, e.g. to read the macOS Keychain or 1Password). The file must be readable by you only (`chmod 600`).
+
+`/pignon login` and `/pignon logout` take effect after `/reload`. A saved key is only used for TypeSafe's own API: never with a `baseURL` or `apiKeyEnv` of your own, and never for laya-serve.
+
+### Jev through OpenRouter
+
+Jev is also reachable through OpenRouter. `/pignon login` does not apply there: export your OpenRouter key and name it in the config:
+
+```json
+{
+  "deciders": [
+    { "type": "jev", "baseURL": "https://openrouter.ai/api", "apiKeyEnv": "OPENROUTER_API_KEY" }
+  ]
+}
+```
+
+Run `/pignon doctor` to check that it answers.
 
 ### Using several deciders
 
