@@ -21,9 +21,9 @@ classifiers = [
 dependencies = ["laya-mlx>=0.2.0,<0.3"]
 
 [project.urls]
-Homepage = "https://github.com/siiick/pignon"
-Repository = "https://github.com/siiick/pignon"
-Issues = "https://github.com/siiick/pignon/issues"
+Homepage = "https://github.com/siiick/pi-pignon"
+Repository = "https://github.com/siiick/pi-pignon"
+Issues = "https://github.com/siiick/pi-pignon/issues"
 
 [project.scripts]
 pignon-laya = "laya_worker:main"

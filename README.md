@@ -1,7 +1,7 @@
 # <img src="docs/assets/pignon.svg" width="40" height="40" alt="" align="top"> pignon
 
-[![CI](https://github.com/siiick/pignon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/siiick/pignon/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/siiick/pignon)](LICENSE)
+[![CI](https://github.com/siiick/pi-pignon/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/siiick/pi-pignon/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/siiick/pi-pignon)](LICENSE)
 
 Pi agent extension that shifts to the right LLM for each prompt, the way a
 bike changes sprocket (*pignon*): a small **decision model** judges how hard
@@ -40,10 +40,10 @@ pi install npm:pi-pignon
 
 `pi update --extensions` then keeps it up to date. To stay on one version,
 pin it (`pi install npm:pi-pignon@0.1.1`); installing another version replaces
-it. Releases are listed on the [releases page](https://github.com/siiick/pignon/releases).
+it. Releases are listed on the [releases page](https://github.com/siiick/pi-pignon/releases).
 
 To run unreleased changes, install from GitHub instead:
-`pi install git:github.com/siiick/pignon` (follows `main`).
+`pi install git:github.com/siiick/pi-pignon` (follows `main`).
 
 ### 2. Give it a decision model
 
@@ -282,14 +282,14 @@ its interface may change; prefer laya-serve.
 It needs an Apple Silicon Mac and a clone of this repository:
 
 ```bash
-git clone https://github.com/siiick/pignon
-uv tool install ./pignon/worker            # puts pignon-laya on PATH
+git clone https://github.com/siiick/pi-pignon
+uv tool install ./pi-pignon/worker            # puts pignon-laya on PATH
 ```
 
 then `"deciders": [{ "type": "laya-local" }]`. pignon starts the worker with
 the first of:
 
-1. `command` in the `laya-local` decider, e.g. `["uv", "run", "--project", "/path/to/pignon/worker", "pignon-laya"]`;
+1. `command` in the `laya-local` decider, e.g. `["uv", "run", "--project", "/path/to/pi-pignon/worker", "pignon-laya"]`;
 2. `LAYA_PYTHON`, running `laya_worker.py` from `LAYA_WORKER_DIR`;
 3. a source checkout's `worker/.venv` (after `uv sync`), when pignon itself runs from that checkout;
 4. `pignon-laya` on `PATH`.
@@ -318,7 +318,7 @@ Tiers refer to models by name. The built-in names are `fast`, `balanced`,
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/siiick/pignon/main/schema/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/siiick/pi-pignon/main/schema/config.schema.json",
   "version": 2,
   "models": {
     "reasoner": { "provider": "anthropic", "modelId": "claude-opus-5-5", "thinking": "high" }
@@ -458,7 +458,7 @@ pignon/
 Work from a clone, and point Pi at it instead of a release:
 
 ```bash
-git clone https://github.com/siiick/pignon && cd pignon
+git clone https://github.com/siiick/pi-pignon && cd pi-pignon
 npm install
 (cd worker && uv sync)          # only for the experimental worker
 pi install ./                   # loads the clone in place, no copy

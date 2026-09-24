@@ -1,6 +1,6 @@
 # pignon-laya (experimental)
 
-An experimental local decision worker for [pignon](https://github.com/siiick/pignon),
+An experimental local decision worker for [pignon](https://github.com/siiick/pi-pignon),
 the model router for the [Pi coding agent](https://pi.dev). It loads the
 [Laya](https://github.com/mizorewww/laya-mlx) System-1 decision model once
 (with MLX, on Apple Silicon) and answers pignon's questions about each prompt,
@@ -15,8 +15,8 @@ Install it from a clone; pignon then finds `pignon-laya` on `PATH` and starts
 it with each session (config: `"deciders": [{ "type": "laya-local" }]`):
 
 ```bash
-git clone https://github.com/siiick/pignon
-uv tool install ./pignon/worker        # update: uv tool install --force ./pignon/worker
+git clone https://github.com/siiick/pi-pignon
+uv tool install ./pi-pignon/worker        # update: uv tool install --force ./pi-pignon/worker
 ```
 
 Requirements: an Apple Silicon Mac, Python 3.11+. The first start downloads

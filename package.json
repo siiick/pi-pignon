@@ -12,13 +12,13 @@
     "laya",
     "jev"
   ],
-  "homepage": "https://github.com/siiick/pignon#readme",
+  "homepage": "https://github.com/siiick/pi-pignon#readme",
   "bugs": {
-    "url": "https://github.com/siiick/pignon/issues"
+    "url": "https://github.com/siiick/pi-pignon/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/siiick/pignon.git"
+    "url": "git+https://github.com/siiick/pi-pignon.git"
   },
   "license": "MIT",
   "author": "Nicolas Chaintron",
