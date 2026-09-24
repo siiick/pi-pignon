@@ -1,0 +1,103 @@
+name: Release
+
+# Run from the Actions tab. Bumps the version, turns the changelog's
+# "Unreleased" section into the release notes, runs every check, then pushes
+# the release commit and tag, publishes to npm (trusted publishing, with
+# provenance) and creates the GitHub release.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      dry_run:
+        description: Dry run (prepare and check the release; push and publish nothing)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release (${{ inputs.bump }}${{ inputs.dry_run && ', dry run' || '' }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the release commit and tag, create the GitHub release
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # No dependency cache: a release should not restore state other runs wrote.
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Check npm supports trusted publishing (11.5.1 or later)
+        run: |
+          required=11.5.1
+          actual=$(npm --version)
+          if [ "$(printf '%s\n' "$required" "$actual" | sort -V | head -n 1)" != "$required" ]; then
+            echo "::error::npm $actual cannot use trusted publishing (needs $required or later)"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Bump version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          version=$(npm version "$BUMP" --no-git-tag-version)
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update changelog and README
+        run: node scripts/release.ts "$RUNNER_TEMP/notes.md"
+
+      - name: Check
+        run: npm run check
+        env:
+          # The worker tests use the runner's Python, not a local worker/.venv.
+          PYTHON: python
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --all --message "chore: release $VERSION"
+          git tag --annotate "v$VERSION" --message "pi-pignon $VERSION"
+          git show --stat HEAD
+          echo "--- Release notes ---"
+          cat "$RUNNER_TEMP/notes.md"
+
+      # Atomic: fails without pushing anything if main moved during the run.
+      - name: Push
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: git push --atomic origin HEAD:main "v$VERSION"
+
+      # The checks already ran above: skip prepublishOnly.
+      - name: Publish to npm
+        run: npm publish --ignore-scripts ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Create GitHub release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "v$VERSION" --verify-tag --title "pi-pignon $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

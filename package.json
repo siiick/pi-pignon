@@ -42,7 +42,7 @@
     "clean": "rm -rf dist node_modules/.vitest",
     "build": "echo 'nothing to build (TypeScript runs via jiti)'",
     "check": "tsc --noEmit && vitest run && npm run test:worker",
-    "test:worker": "cd worker && .venv/bin/python -m unittest",
+    "test:worker": "cd worker && ${PYTHON:-.venv/bin/python} -m unittest",
     "schema": "UPDATE_SCHEMA=1 vitest run tests/schema.test.ts",
     "test:live": "PIGNON_LIVE=1 vitest run tests/live",
     "prepublishOnly": "npm run check"
