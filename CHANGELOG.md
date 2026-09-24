@@ -15,6 +15,18 @@
   reach Jev through OpenRouter.
 - The internal `docs/PLAN-*.md` notes are no longer shipped in the package.
 
+## 0.1.3 — 2026-09-24
+
+- No changes from 0.1.2: the same documentation, released from `main`.
+
+## 0.1.2 — 2026-09-24
+
+- The repository moved to `siiick/pi-pignon`, after the npm package. Links and
+  the config's `$schema` URL point there (the old URLs redirect).
+- The README is shorter: the configuration reference moved to
+  `docs/CONFIGURATION.md` and the design notes to `docs/DESIGN.md`, both
+  shipped in the package.
+
 ## 0.1.1 — 2026-09-23
 
 - Published on npm: `pi install npm:pi-pignon`.
