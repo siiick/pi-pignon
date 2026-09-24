@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.4 — 2026-09-24
+
 - `/pignon login` saves the Jev (TypeSafe) API key, so you no longer have to
   export `TYPESAFE_API_KEY`. It can store a command that prints the key
   (Keychain, 1Password, …), so the key never touches the disk, or the key

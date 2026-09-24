@@ -38,7 +38,7 @@ pi install npm:pi-pignon
 ```
 
 `pi update --extensions` keeps it up to date. To pin a version:
-`pi install npm:pi-pignon@0.1.3`. To try unreleased changes:
+`pi install npm:pi-pignon@0.1.4`. To try unreleased changes:
 `pi install git:github.com/siiick/pi-pignon`.
 
 ### Choosing a decider
