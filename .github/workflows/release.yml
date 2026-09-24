@@ -2,15 +2,19 @@ name: Release
 
 # Run from the Actions tab. Bumps the version, turns the changelog's
 # "Unreleased" section into the release notes, runs every check, then pushes
-# the release commit and tag, publishes to npm (trusted publishing, with
-# provenance) and creates the GitHub release.
+# the release commit and tag, stages the package on npm (trusted publishing,
+# with provenance) and creates the GitHub release. The package goes live once
+# a maintainer approves it with 2FA: `npm stage approve` or npmjs.com.
+#
+# "retry" releases main's current version from its tag, for a run that pushed
+# the tag but failed to publish: nothing is bumped, committed or pushed.
 on:
   workflow_dispatch:
     inputs:
       bump:
         description: Version bump
         type: choice
-        options: [patch, minor, major]
+        options: [patch, minor, major, retry]
         default: patch
       dry_run:
         description: Dry run (prepare and check the release; push and publish nothing)
@@ -44,26 +48,38 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Check npm supports trusted publishing (11.5.1 or later)
+      - name: Check npm supports staged publishing (11.15.0 or later)
         run: |
-          required=11.5.1
+          required=11.15.0
           actual=$(npm --version)
           if [ "$(printf '%s\n' "$required" "$actual" | sort -V | head -n 1)" != "$required" ]; then
-            echo "::error::npm $actual cannot use trusted publishing (needs $required or later)"
+            echo "::error::npm $actual cannot stage packages (needs $required or later)"
             exit 1
           fi
-
-      - run: npm ci
 
       - name: Bump version
         id: version
         env:
           BUMP: ${{ inputs.bump }}
         run: |
-          version=$(npm version "$BUMP" --no-git-tag-version)
+          if [ "$BUMP" = retry ]; then
+            version=v$(node -p 'require("./package.json").version')
+            if ! git fetch --quiet --depth=1 origin "refs/tags/$version:refs/tags/$version"; then
+              echo "::error::No $version tag: retry only releases a version an earlier run tagged"
+              exit 1
+            fi
+            # With this script, before the tag's older copy replaces it.
+            node scripts/release.ts --notes-only "$RUNNER_TEMP/notes.md"
+            git checkout --quiet "$version"
+          else
+            version=$(npm version "$BUMP" --no-git-tag-version)
+          fi
           echo "version=${version#v}" >> "$GITHUB_OUTPUT"
 
+      - run: npm ci
+
       - name: Update changelog and README
+        if: ${{ inputs.bump != 'retry' }}
         run: node scripts/release.ts "$RUNNER_TEMP/notes.md"
 
       - name: Check
@@ -73,6 +89,7 @@ jobs:
           PYTHON: python
 
       - name: Commit and tag
+        if: ${{ inputs.bump != 'retry' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -86,18 +103,43 @@ jobs:
 
       # Atomic: fails without pushing anything if main moved during the run.
       - name: Push
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.bump != 'retry' }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: git push --atomic origin HEAD:main "v$VERSION"
 
-      # The checks already ran above: skip prepublishOnly.
-      - name: Publish to npm
-        run: npm publish --ignore-scripts ${{ inputs.dry_run && '--dry-run' || '' }}
+      # The checks already ran above: skip prepublishOnly. The trusted
+      # publisher only allows staging, so nothing goes live without 2FA.
+      - name: Stage on npm
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          npm stage publish . --provenance --ignore-scripts
+          {
+            echo "### pi-pignon $VERSION is staged on npm"
+            echo
+            echo "It goes live once approved with 2FA, on npmjs.com (Staged Packages tab) or with:"
+            echo
+            echo '```bash'
+            echo "npm stage list pi-pignon"
+            echo "npm stage approve <stage-id>"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage on npm (dry run)
+        if: ${{ inputs.dry_run }}
+        run: npm stage publish . --provenance --ignore-scripts --dry-run
 
       - name: Create GitHub release
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "v$VERSION" --verify-tag --title "pi-pignon $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+        # Skipped when a retry finds the release already made.
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "The v$VERSION release already exists"
+            exit 0
+          fi
+          gh release create "v$VERSION" --verify-tag --title "pi-pignon $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

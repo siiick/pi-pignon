@@ -7,6 +7,11 @@
 // Writes the release notes (the new section's body) to <notes-file> for the
 // GitHub release. Fails when "Unreleased" is empty: every release says what
 // changed.
+//
+//   node scripts/release.ts --notes-only <notes-file>
+//
+// Changes nothing and writes the notes of the version already in
+// package.json, to retry a release whose publishing failed.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -28,15 +33,30 @@ export function releaseChangelog(changelog: string, version: string, date: strin
   return { changelog: released, notes };
 }
 
+/** The body of an existing version's section. */
+export function changelogSection(changelog: string, version: string): string {
+  const heading = `\n## ${version} `;
+  const start = changelog.indexOf(heading);
+  if (start === -1) throw new Error(`CHANGELOG.md has no ${version} section`);
+  const bodyStart = changelog.indexOf("\n", start + heading.length) + 1;
+  const next = changelog.indexOf("\n## ", bodyStart);
+  return changelog.slice(bodyStart, next === -1 ? changelog.length : next).trim();
+}
+
 /** Points `npm:pi-pignon@<version>` examples at the new version. */
 export function releaseReadme(readme: string, version: string): string {
   return readme.replace(/npm:pi-pignon@\d+\.\d+\.\d+/g, `npm:pi-pignon@${version}`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const notesFile = process.argv[2];
-  if (!notesFile) throw new Error("usage: node scripts/release.ts <notes-file>");
+  const notesOnly = process.argv[2] === "--notes-only";
+  const notesFile = process.argv[notesOnly ? 3 : 2];
+  if (!notesFile) throw new Error("usage: node scripts/release.ts [--notes-only] <notes-file>");
   const { version } = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
+  if (notesOnly) {
+    writeFileSync(notesFile, `${changelogSection(readFileSync("CHANGELOG.md", "utf8"), version)}\n`);
+    process.exit(0);
+  }
   const date = new Date().toISOString().slice(0, 10);
   const { changelog, notes } = releaseChangelog(readFileSync("CHANGELOG.md", "utf8"), version, date);
   writeFileSync("CHANGELOG.md", changelog);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { releaseChangelog, releaseReadme } from "../scripts/release.js";
+import { changelogSection, releaseChangelog, releaseReadme } from "../scripts/release.js";
 
 const CHANGELOG = `# Changelog
 
@@ -57,5 +57,17 @@ describe("releaseReadme", () => {
     expect(releaseReadme("To pin: `pi install npm:pi-pignon@0.1.1`. Or `npm:pi-pignon`.", "0.2.0")).toBe(
       "To pin: `pi install npm:pi-pignon@0.2.0`. Or `npm:pi-pignon`.",
     );
+  });
+});
+
+describe("changelogSection", () => {
+  it("returns a version's notes", () => {
+    const { changelog } = releaseChangelog(CHANGELOG, "0.2.0", "2026-10-01");
+    expect(changelogSection(changelog, "0.2.0")).toBe("- New thing.\n- Other thing.");
+    expect(changelogSection(changelog, "0.1.0")).toBe("- First release.");
+  });
+
+  it("refuses a version that is not in the changelog", () => {
+    expect(() => changelogSection(CHANGELOG, "0.3.0")).toThrow(/no 0.3.0 section/);
   });
 });
